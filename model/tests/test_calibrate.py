@@ -76,8 +76,9 @@ def test_cli_smoke(tmp_path):
          os.path.join(DATA, "sample_log.txt"), os.path.join(DATA, "sample_sleep.json"),
          "--out", str(out)],
         capture_output=True, text=True, timeout=600)
-    assert p.returncode == 0, p.stderr
-    assert "hrRise" in p.stdout and "varRatio" in p.stdout
+    assert p.returncode == 0, p.stderr + p.stdout
+    assert "default hrRise=0.05 varRatio=1.30: precision=" in p.stdout
+    assert "best hrRise=" in p.stdout and "NO RECOMMENDATION" not in p.stdout
     assert len(list(out.glob("*.png"))) == 1
 
 
@@ -97,3 +98,99 @@ def test_match_stages_picks_largest_overlap_and_none():
     n1.battery = [(0, 90.0), (5, 87.5), (9, 84.0)]
     assert battery_drop(n1) == 6.0
     assert [percentile(list(range(101)), p) for p in (50, 90, 99)] == [50, 90, 99]
+
+
+def _short_night(n_epochs):
+    night, _ = _load()
+    return type(night)(night.start_t, night.epochs[:n_epochs], night.events, night.battery)
+
+
+def _all_light(night):
+    return [(night.epochs[0].t, night.epochs[-1].t + 30, "light")]
+
+
+def _fake_results(epochs, flagged):
+    from types import SimpleNamespace as NS
+    return [NS(epoch=e, rem=NS(rem_like=(k in flagged))) for k, e in enumerate(epochs)]
+
+
+def _fake_night(n_epochs):
+    from lucidcue_model.features import Epoch
+    from lucidcue_model.logparse import Night
+    return Night(0, [Epoch(30 * k, 0, None, None) for k in range(n_epochs)])
+
+
+def test_grid_search_ties_pick_strictest_cell():
+    # No REM in the truth: every cell scores F0.5 = 0. The tie must go to the strictest
+    # cell (highest hrRise, then varRatio), never the loosest (0.00, 1.00).
+    short = _short_night(40)
+    hr, vr, best = grid_search([short], [_all_light(short)], Config())
+    assert (hr, vr) == (0.20, 2.0)
+    assert best["tp"] == 0 and best["f05"] == 0.0
+
+
+def test_grid_search_finds_true_maximiser(monkeypatch):
+    import calibrate
+    night = _fake_night(10)
+    stages = [(0, 90, "light"), (90, 180, "rem"), (180, 300, "light")]   # epochs 3..5 REM
+
+    def fake_run_night(epochs, cfg):
+        if abs(cfg.hr_rise - 0.07) < 1e-9 and abs(cfg.var_ratio - 1.25) < 1e-9:
+            flagged = {3, 4, 5}                 # perfect: F0.5 = 1
+        elif cfg.hr_rise < 0.07:
+            flagged = {2, 3, 4, 5, 6}           # too loose: precision 0.6
+        else:
+            flagged = {4}                       # too strict: recall 1/3
+        return _fake_results(epochs, flagged)
+
+    monkeypatch.setattr(calibrate, "run_night", fake_run_night)
+    hr, vr, best = grid_search([night], [stages], Config())
+    assert (round(hr, 2), round(vr, 2)) == (0.07, 1.25)
+    assert best["f05"] == 1.0 and best["precision"] == 1.0 and best["tp"] == 3
+
+
+def test_grid_search_f05_tie_prefers_higher_precision(monkeypatch):
+    import calibrate
+    night = _fake_night(12)
+    stages = [(0, 180, "rem"), (180, 360, "light")]   # epochs 0..5 REM
+
+    def fake_run_night(epochs, cfg):
+        if cfg.hr_rise == 0.0:
+            flagged = {0, 1}                    # precision 1, recall 1/3: F0.5 = 5/7
+        else:
+            flagged = set(range(9))             # precision 2/3, recall 1: F0.5 = 5/7
+        return _fake_results(epochs, flagged)
+
+    monkeypatch.setattr(calibrate, "run_night", fake_run_night)
+    hr, vr, best = grid_search([night], [stages], Config())
+    assert (hr, vr) == (0.0, 2.0)
+    assert best["precision"] == 1.0
+
+
+def _write_short_log(path, n_epochs):
+    with open(os.path.join(DATA, "sample_log.txt")) as f:
+        lines = f.read().splitlines()
+    e_lines = [ln for ln in lines if ln.startswith("E,")][:n_epochs]
+    path.write_text("\n".join([lines[0]] + e_lines) + "\n")
+
+
+def test_main_all_zero_truth_gives_no_recommendation(tmp_path, capsys):
+    import calibrate
+    log = tmp_path / "LUCIDCUE.TXT"
+    _write_short_log(log, 40)
+    night = parse_log(log.read_text())[0]
+    sleep = tmp_path / "sleep.json"
+    t0, t1, _ = _all_light(night)[0]
+    sleep.write_text(json.dumps({"sleepLevels": [
+        {"startGMT": _gmt(t0), "endGMT": _gmt(t1), "activityLevel": 1}]}))
+    rc = calibrate.main([str(log), str(sleep), "--out", str(tmp_path / "calib")])
+    out = capsys.readouterr().out
+    assert rc != 0
+    assert "NO RECOMMENDATION" in out
+    assert "best" not in out
+    assert "default hrRise=0.05 varRatio=1.30" in out
+
+
+def _gmt(t):
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.0")

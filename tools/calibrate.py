@@ -19,6 +19,8 @@ from lucidcue_model.sleep_state import ASLEEP  # noqa: E402
 HR_RISE_GRID = [i / 100 for i in range(0, 21)]
 VAR_RATIO_GRID = [1 + i / 20 for i in range(0, 21)]
 STAGE_NUM = {"deep": 0, "light": 1, "rem": 2, "awake": 3}
+NO_RECOMMENDATION = ("NO RECOMMENDATION — keep current thresholds; "
+                     "check the sleep files / STAGE_MAP")
 
 
 def _stage_at(t, stages):
@@ -55,29 +57,53 @@ def score(results, stages) -> dict:
     return {"precision": precision, "recall": recall, "f05": f05, "tp": tp, "fp": fp, "fn": fn}
 
 
-def grid_search(nights, stages_by_night, cfg):
-    """Return (best_hr_rise, best_var_ratio, {precision, recall, f05}) maximising mean F0.5."""
-    scored = [(n, st) for (n, st) in zip(nights, stages_by_night) if st is not None]
-    best = (cfg.hr_rise, cfg.var_ratio, {"precision": 0.0, "recall": 0.0, "f05": 0.0})
+MIN_PRECISION = 0.60   # spec success criterion: >= 60% of REM-flagged epochs in Garmin REM
+TIE = 1e-9             # scores closer than this count as equal
+
+
+def evaluate(scored, cfg) -> dict:
+    """Mean precision / recall / F0.5 over (night, stages) pairs, plus summed tp / fp / fn."""
+    out = {"precision": 0.0, "recall": 0.0, "f05": 0.0, "tp": 0, "fp": 0, "fn": 0}
     if not scored:
-        return best
-    best_f05 = -1.0
+        return out
+    for (night, stages) in scored:
+        s = score(run_night(night.epochs, cfg), stages)
+        for key in out:
+            out[key] += s[key]
+    k = len(scored)
+    for key in ("precision", "recall", "f05"):
+        out[key] = out[key] / k
+    return out
+
+
+def _better(a, b):
+    """True if trial a beats trial b. A trial is (f05, precision, hr_rise, var_ratio).
+    Higher F0.5 wins; on a tie, higher precision; then the stricter (higher) hrRise,
+    then the higher varRatio. Ties never go to looser thresholds (fewer false cues)."""
+    if abs(a[0] - b[0]) > TIE:
+        return a[0] > b[0]
+    if abs(a[1] - b[1]) > TIE:
+        return a[1] > b[1]
+    if a[2] != b[2]:
+        return a[2] > b[2]
+    return a[3] > b[3]
+
+
+def grid_search(nights, stages_by_night, cfg):
+    """Return (best_hr_rise, best_var_ratio, metrics) maximising mean F0.5 (ties: see
+    _better). metrics is evaluate()'s dict for the chosen cell."""
+    scored = [(n, st) for (n, st) in zip(nights, stages_by_night) if st is not None]
+    if not scored:
+        return (cfg.hr_rise, cfg.var_ratio, evaluate(scored, cfg))
+    best = None
+    best_key = None
     for hr_rise in HR_RISE_GRID:
         for var_ratio in VAR_RATIO_GRID:
-            trial = replace(cfg, hr_rise=hr_rise, var_ratio=var_ratio)
-            sum_p = 0.0
-            sum_r = 0.0
-            sum_f = 0.0
-            for (night, stages) in scored:
-                s = score(run_night(night.epochs, trial), stages)
-                sum_p += s["precision"]
-                sum_r += s["recall"]
-                sum_f += s["f05"]
-            k = len(scored)
-            if sum_f / k > best_f05:   # strict: ties go to the first found
-                best_f05 = sum_f / k
-                best = (hr_rise, var_ratio,
-                        {"precision": sum_p / k, "recall": sum_r / k, "f05": sum_f / k})
+            m = evaluate(scored, replace(cfg, hr_rise=hr_rise, var_ratio=var_ratio))
+            key = (m["f05"], m["precision"], hr_rise, var_ratio)
+            if best_key is None or _better(key, best_key):
+                best_key = key
+                best = (hr_rise, var_ratio, m)
     return best
 
 
@@ -195,13 +221,27 @@ def main(argv=None):
         plot_night(night, results, stages, png)
         print("  plot: " + png)
 
-    if any(st is not None for st in stages_by_night):
+    status = 0
+    scored = [(n, st) for (n, st) in zip(nights, stages_by_night) if st is not None]
+    if scored:
+        d = evaluate(scored, cfg)
+        print("default hrRise=%.2f varRatio=%.2f: precision=%.3f recall=%.3f f05=%.3f tp=%d"
+              % (cfg.hr_rise, cfg.var_ratio, d["precision"], d["recall"], d["f05"], d["tp"]))
         hr_rise, var_ratio, best = grid_search(nights, stages_by_night, cfg)
-        print("best hrRise=%.2f varRatio=%.2f" % (hr_rise, var_ratio))
-        print("  precision=%.3f recall=%.3f f05=%.3f"
-              % (best["precision"], best["recall"], best["f05"]))
+        if best["tp"] == 0 or best["precision"] < MIN_PRECISION:
+            print(NO_RECOMMENDATION)
+            print("  (top grid cell: precision=%.3f recall=%.3f f05=%.3f tp=%d; "
+                  "needs precision >= %.2f and tp > 0)"
+                  % (best["precision"], best["recall"], best["f05"], best["tp"], MIN_PRECISION))
+            status = 2
+        else:
+            print("best hrRise=%.2f varRatio=%.2f: precision=%.3f recall=%.3f f05=%.3f tp=%d"
+                  % (hr_rise, var_ratio, best["precision"], best["recall"], best["f05"],
+                     best["tp"]))
     else:
-        print("no nights matched a sleep file; skipping grid search")
+        print("no nights matched a sleep file")
+        print(NO_RECOMMENDATION)
+        status = 2
 
     if asleep_motion:
         print("motion in ASLEEP epochs: p50=%d p90=%d p99=%d" % (
@@ -209,7 +249,7 @@ def main(argv=None):
             percentile(asleep_motion, 99)))
     else:
         print("motion in ASLEEP epochs: n/a (no ASLEEP epochs)")
-    return 0
+    return status
 
 
 if __name__ == "__main__":

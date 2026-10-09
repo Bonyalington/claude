@@ -375,13 +375,21 @@ then `.venv\Scripts\python tools\calibrate.py LUCIDCUE.TXT sleep_2026-10-10.json
 (macOS / Linux can also write `sleep_*.json`.)
 
 The script prints, for each night, the epoch count, the battery drop and the
-path of a plot in `calib/`. It then prints a line
-`best hrRise=… varRatio=…` with precision and recall, plus the motion
-percentiles while asleep. Then:
+path of a plot in `calib/`. It then prints a `default hrRise=0.05
+varRatio=1.30: precision=… recall=…` line, which scores the current
+thresholds. If the search found a good setting, it next prints a
+`best hrRise=… varRatio=…` line with its precision and recall. Otherwise it
+prints `NO RECOMMENDATION — keep current thresholds; check the sleep files /
+STAGE_MAP` and exits with an error status. That happens when no thresholds
+reach precision 0.60 (the spec's success criterion) or none find any REM.
+Last come the motion percentiles while asleep. Then:
 
-1. **Set the thresholds:** set `hrRise` and `varRatio` to the reported values
-   (§6, "Changing settings"). Then confirm that the next `night_start` line in
-   `LUCIDCUE.TXT` shows the new values.
+1. **Set the thresholds:** only set them if precision ≥ 0.60 and the tool
+   printed a recommendation (a `best hrRise=… varRatio=…` line). Then set
+   `hrRise` and `varRatio` to the reported values (§6, "Changing settings"),
+   and confirm that the next `night_start` line in `LUCIDCUE.TXT` shows the
+   new values. After `NO RECOMMENDATION`, keep the current values, and check
+   that each `sleep_*.json` has sleep stages for the right night.
 2. **Check stillness:** if the ASLEEP motion p90 is near or above 500, the
    `stillThreshold` (fixed at 500 in the app) is too low for you. Note the
    numbers so it can be changed in code.
