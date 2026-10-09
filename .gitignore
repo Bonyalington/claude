@@ -4,3 +4,5 @@ bin/
 *.der
 *.pem
 *.prg
+logs/
+calib/
