@@ -50,6 +50,30 @@ class RemDetector {
         return mVarBase;
     }
 
+    // Used by tests only (test/ReplayTest.mc): sets every field from a checkpoint of
+    // the Python RemDetector (tools/gen_fixtures.py: base_hr, base_var, then RD_FIELDS).
+    // aBaseHr / aBaseVar are the baseline deques oldest -> newest (equal sizes, at most
+    // BASE_EPOCHS); they are copied into slots 0..count-1 with the write index at
+    // count % BASE_EPOCHS, so step()'s loop starts at slot 0 (mBaseNext - count wraps
+    // to 0 when full) and adds the values in the deque's order. remLike / hrBase /
+    // varBase are outputs that the next step() recomputes before anything reads them.
+    function restore(aBaseHr as Array<Double>, aBaseVar as Array<Double or Null>,
+            aStillRun as Number, aRemRun as Number, aNonRemRun as Number,
+            aEpisodeActive as Boolean, aEpisodeId as Number) as Void {
+        var count = aBaseHr.size();
+        for (var k = 0; k < count; k++) {
+            mBaseHr[k] = aBaseHr[k];
+            mBaseVar[k] = aBaseVar[k];
+        }
+        mBaseNext = count % LcConst.BASE_EPOCHS;
+        mBaseCount = count;
+        mStillRun = aStillRun;
+        mRemRun = aRemRun;
+        mNonRemRun = aNonRemRun;
+        mEpisodeActive = aEpisodeActive;
+        mEpisodeId = aEpisodeId;
+    }
+
     function step(e as Epoch, state as Number) as Void {
         var isStill = e.motion < mCfg.stillThreshold;
         if (isStill) {

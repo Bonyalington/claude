@@ -63,6 +63,32 @@ class CueController {
         return out;
     }
 
+    // Used by tests only (test/ReplayTest.mc): sets every field from a checkpoint of
+    // the Python CueController (tools/gen_fixtures.py: CC_FIELDS, then the cue log).
+    // aCueLog's [t, level] pairs are copied. fire / level / event are outputs that the
+    // next step() sets before anything reads them.
+    function restore(aBaseLevel as Number, aCooldown as Number, aLastCueT as Number or Null,
+            aPendingReaction as Boolean, aLastCueAbsorbed as Boolean, aCurEpisodeId as Number,
+            aCuesInEpisode as Number, aFinishedEpisodeId as Number or Null,
+            aCuesTonight as Number, aWakesAfterCue as Number,
+            aCueLog as Array<Array<Number>>) as Void {
+        mBaseLevel = aBaseLevel;
+        mCooldown = aCooldown;
+        mLastCueT = aLastCueT;
+        mPendingReaction = aPendingReaction;
+        mLastCueAbsorbed = aLastCueAbsorbed;
+        mCurEpisodeId = aCurEpisodeId;
+        mCuesInEpisode = aCuesInEpisode;
+        mFinishedEpisodeId = aFinishedEpisodeId;
+        mCuesTonight = aCuesTonight;
+        mWakesAfterCue = aWakesAfterCue;
+        mCueLog = [] as Array<Array<Number>>;
+        for (var k = 0; k < aCueLog.size(); k++) {
+            var p = aCueLog[k];
+            mCueLog.add([p[0], p[1]] as Array<Number>);
+        }
+    }
+
     function step(e as Epoch, state as Number, onsetT as Number or Null,
             rem as RemDetector) as Void {
         mEvent = null;

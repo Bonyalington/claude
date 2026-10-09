@@ -51,6 +51,25 @@ class SleepStateMachine {
         return mOnsetT;
     }
 
+    // Used by tests only (test/ReplayTest.mc): sets every field from a checkpoint of
+    // the Python SleepStateMachine (tools/gen_fixtures.py SM_FIELDS, same order).
+    function restore(aState as Number, aOnsetT as Number or Null, aEpochIndex as Number,
+            aRefSum as Double, aRefCount as Number, aRef as Double or Null,
+            aWakeRun as Number, aWakeRunStartT as Number, aAwakeSince as Number or Null,
+            aOnsetRun as Number, aRunStartT as Number) as Void {
+        mState = aState;
+        mOnsetT = aOnsetT;
+        mEpochIndex = aEpochIndex;
+        mRefSum = aRefSum;
+        mRefCount = aRefCount;
+        mRef = aRef;
+        mWakeRun = aWakeRun;
+        mWakeRunStartT = aWakeRunStartT;
+        mAwakeSince = aAwakeSince;
+        mOnsetRun = aOnsetRun;
+        mRunStartT = aRunStartT;
+    }
+
     function step(e as Epoch) as Void {
         var index = mEpochIndex;
         mEpochIndex += 1;
