@@ -12,6 +12,9 @@ from lucidcue_model.synth import scripted_night
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 GEN = os.path.join(ROOT, "tools", "gen_fixtures.py")
 COMMITTED = os.path.join(ROOT, "lucidcue", "test", "Fixtures.mc")
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+
+import gen_fixtures  # noqa: E402
 NAMES = ["T", "MOTION", "HR", "VAR", "EXP_STATE", "EXP_REM", "EXP_EPISODE", "EXP_FIRE_LEVEL"]
 STATE_NUM = {AWAKE: 0, SETTLING: 1, ASLEEP: 2}
 
@@ -80,7 +83,9 @@ def test_committed_fixtures_are_current():
 def test_replay_split_into_ordered_chunk_tests():
     src = _generate()
     chunk = int(re.search(r"const CHUNK = (\d+);", src).group(1))
-    assert chunk == 60
+    # Follows the generator's constant, so SETUP §5's "halve CHUNK" stays green.
+    assert chunk == gen_fixtures.CHUNK
+    assert 1 <= chunk <= 960
     tests = re.findall(
         r"\(:test\)\nfunction (testReplay\d+)\(logger as Test\.Logger\) as Boolean \{\n"
         r"    return ReplayFix\.runChunk\(logger, (\d+)\);\n\}",
