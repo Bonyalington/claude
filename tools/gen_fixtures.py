@@ -20,6 +20,9 @@ from lucidcue_model.synth import scripted_night  # noqa: E402
 STATE_NUM = {AWAKE: 0, SETTLING: 1, ASLEEP: 2}
 NULL_DBL = "-1.0d"
 PER_LINE = 10
+# Epochs per generated replay test (ReplayFix.runChunk). Halve it and regenerate if the
+# replay tests trip the watchdog ("Code Executed Too Long").
+CHUNK = 60
 
 
 def dbl(v):
@@ -40,6 +43,27 @@ def _const(name, tokens, comment):
     lines[-1] = lines[-1][:-1]  # no trailing comma after the last element
     lines.append("    ];")
     return "\n".join(lines)
+
+
+def chunk_count(n: int) -> int:
+    return (n + CHUNK - 1) // CHUNK
+
+
+def _replay_tests(n):
+    """One global test per chunk; zero-padded names so name order == declaration order."""
+    width = max(2, len(str(chunk_count(n) - 1)))
+    out = [
+        "// Sequential replay chunks; see ReplayTest.mc. They must run in order, as a full suite.",
+    ]
+    for k in range(chunk_count(n)):
+        out += [
+            "(:test)",
+            "function testReplay%0*d(logger as Test.Logger) as Boolean {" % (width, k),
+            "    return ReplayFix.runChunk(logger, %d);" % k,
+            "}",
+            "",
+        ]
+    return "\n".join(out).rstrip("\n")
 
 
 def generate() -> str:
@@ -64,12 +88,18 @@ def generate() -> str:
         "// Source: run_night(scripted_night(0)[0], Config(calibration_mode=False)), %d epochs."
         % len(results),
         "import Toybox.Lang;",
+        "import Toybox.Test;",
         "",
         "(:test)",
         "module Fixtures {",
+        "    // Epochs per replay test (halve and regenerate if the watchdog trips).",
+        "    const CHUNK = %d;" % CHUNK,
+        "",
     ]
     parts.append("\n\n".join(_const(name, toks, comment) for name, toks, comment in arrays))
     parts.append("}")
+    parts.append("")
+    parts.append(_replay_tests(len(results)))
     return "\n".join(parts) + "\n"
 
 

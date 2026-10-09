@@ -75,3 +75,21 @@ def test_expected_outputs_match_run_night():
 def test_committed_fixtures_are_current():
     with open(COMMITTED) as f:
         assert f.read() == _generate()
+
+
+def test_replay_split_into_ordered_chunk_tests():
+    src = _generate()
+    chunk = int(re.search(r"const CHUNK = (\d+);", src).group(1))
+    assert chunk == 60
+    tests = re.findall(
+        r"\(:test\)\nfunction (testReplay\d+)\(logger as Test\.Logger\) as Boolean \{\n"
+        r"    return ReplayFix\.runChunk\(logger, (\d+)\);\n\}",
+        src,
+    )
+    n_chunks = (960 + chunk - 1) // chunk
+    assert [int(k) for _, k in tests] == list(range(n_chunks))
+    names = [name for name, _ in tests]
+    assert names == ["testReplay%02d" % k for k in range(n_chunks)]
+    assert names == sorted(names)  # name order == declaration order
+    assert (n_chunks - 1) * chunk < 960 <= n_chunks * chunk  # chunks cover every epoch
+    assert "import Toybox.Test;" in src

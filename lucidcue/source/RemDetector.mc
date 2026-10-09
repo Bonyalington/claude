@@ -61,26 +61,36 @@ class RemDetector {
         // Baselines are computed before the current epoch is added.
         mHrBase = null;
         mVarBase = null;
-        if (mBaseCount >= LcConst.BASE_MIN_EPOCHS) {
+        var count = mBaseCount;
+        if (count >= LcConst.BASE_MIN_EPOCHS) {
+            // One pass, oldest -> newest, with separate accumulators: each sum sees the
+            // same values in the same order as Python's two deque loops (bit-identical).
+            // Buffers and size are hoisted into locals and the index wraps explicitly,
+            // to keep the per-entry bytecode low (watchdog).
+            var hrBuf = mBaseHr;
+            var varBuf = mBaseVar;
+            var size = LcConst.BASE_EPOCHS;
             // Oldest entry: index 0 until the buffer first wraps, then mBaseNext.
-            var start = mBaseNext - mBaseCount;
-            if (start < 0) {
-                start += LcConst.BASE_EPOCHS;
+            var idx = mBaseNext - count;
+            if (idx < 0) {
+                idx += size;
             }
             var total = 0.0d;
-            for (var k = 0; k < mBaseCount; k++) {
-                total += mBaseHr[(start + k) % LcConst.BASE_EPOCHS];
-            }
-            mHrBase = total / mBaseCount.toDouble();
             var varTotal = 0.0d;
             var varCount = 0;
-            for (var j = 0; j < mBaseCount; j++) {
-                var v = mBaseVar[(start + j) % LcConst.BASE_EPOCHS];
+            for (var k = 0; k < count; k++) {
+                total += hrBuf[idx];
+                var v = varBuf[idx];
                 if (v != null) {
                     varTotal += v;
                     varCount += 1;
                 }
+                idx += 1;
+                if (idx == size) {
+                    idx = 0;
+                }
             }
+            mHrBase = total / count.toDouble();
             if (varCount > 0) {
                 mVarBase = varTotal / varCount.toDouble();
             }

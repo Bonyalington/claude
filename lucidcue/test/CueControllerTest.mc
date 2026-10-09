@@ -10,8 +10,7 @@ import Toybox.Test;
 (:test)
 module CueFix {
     const T0 = 1760000000;
-    const H = 16200;        // int(4.5 * 3600)
-    const T = 1760016200;   // T0 + H, the time of the first cue
+    const T = 1760016200;   // Python T = T0 + H with H = int(4.5 * 3600) = 16200: the first cue
 
     // Python rem(ep_id, active): RemStatus(True, active, ep_id, 55.0, 20.0).
     function rem(epId as Number, active as Boolean) as RemDetector {

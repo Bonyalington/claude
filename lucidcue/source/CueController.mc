@@ -123,12 +123,12 @@ class CueController {
             // 3. First cue in an episode.
             if (lastT == null) {
                 doFire = true;
-            } else if (e.t - lastT >= mCooldown) {
+            } else if (e.t - (lastT as Number) >= mCooldown) {
                 doFire = true;
             }
         } else if (lastT != null) {
             // 4. Ramp cue. (A cue fired this episode, so lastT is never null here.)
-            if (e.t - lastT >= LcConst.RAMP_SEC && mLastCueAbsorbed) {
+            if (e.t - (lastT as Number) >= LcConst.RAMP_SEC && mLastCueAbsorbed) {
                 doFire = true;
                 lvl = mBaseLevel + mCfg.levelStep * mCuesInEpisode;
                 if (lvl > mCfg.levelMax) { // min(level_max, ...)

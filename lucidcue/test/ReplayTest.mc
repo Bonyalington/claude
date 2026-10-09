@@ -5,9 +5,22 @@ import Toybox.Test;
 // tools/gen_fixtures.py from the Python model) stepped through SleepStateMachine,
 // RemDetector and CueController in the same order as model/lucidcue_model/night.py.
 // Every epoch's state, rem_like, episode id and fire level must equal Python's.
+//
+// The night is replayed in chunks of Fixtures.CHUNK epochs so that no single test
+// runs long enough to trip the watchdog. The generated tests testReplay00,
+// testReplay01, ... (end of Fixtures.mc) each call runChunk(logger, k); the units'
+// state carries over between them in this module's variables. The chunks must run
+// in order, as part of the full suite: a single replay test run on its own fails by
+// design (the position guard below).
 
 (:test)
 module ReplayFix {
+    var sm as SleepStateMachine or Null = null;
+    var rd as RemDetector or Null = null;
+    var cc as CueController or Null = null;
+    var pos as Number = 0;      // next epoch index to replay; -1 after a mismatch
+    var fires as Number = 0;    // fires seen so far
+
     // Fixtures encode a null Double as -1.0d (real HR / variability values are >= 0).
     function nullable(v as Double) as Double or Null {
         if (v < 0.0d) {
@@ -15,57 +28,81 @@ module ReplayFix {
         }
         return v;
     }
-}
 
-(:test)
-function testReplayMatchesPythonModel(logger as Test.Logger) as Boolean {
-    var n = Fixtures.T.size();
-    Test.assertEqual(n, 960);
-    Test.assertEqual(Fixtures.MOTION.size(), n);
-    Test.assertEqual(Fixtures.HR.size(), n);
-    Test.assertEqual(Fixtures.VAR.size(), n);
-    Test.assertEqual(Fixtures.EXP_STATE.size(), n);
-    Test.assertEqual(Fixtures.EXP_REM.size(), n);
-    Test.assertEqual(Fixtures.EXP_EPISODE.size(), n);
-    Test.assertEqual(Fixtures.EXP_FIRE_LEVEL.size(), n);
-
-    // Defaults; calibrationMode (False in the generator) is not read by these units.
-    var cfg = new LcConfig();
-    var sm = new SleepStateMachine(cfg);
-    var rd = new RemDetector(cfg);
-    var cc = new CueController(cfg);
-    var fires = 0;
-    for (var i = 0; i < n; i++) {
-        var e = new Epoch(Fixtures.T[i] as Number, Fixtures.MOTION[i] as Number,
-            ReplayFix.nullable(Fixtures.HR[i] as Double),
-            ReplayFix.nullable(Fixtures.VAR[i] as Double));
-        sm.step(e);
-        rd.step(e, sm.state());
-        cc.step(e, sm.state(), sm.onsetT(), rd);
-
-        var state = sm.state();
-        var rem = rd.remLike() ? 1 : 0;
-        var episode = rd.episodeId();
-        var fireLevel = cc.fire() ? cc.level() : 0;
-        var expState = Fixtures.EXP_STATE[i] as Number;
-        var expRem = Fixtures.EXP_REM[i] as Number;
-        var expEpisode = Fixtures.EXP_EPISODE[i] as Number;
-        var expFireLevel = Fixtures.EXP_FIRE_LEVEL[i] as Number;
-        if (state != expState || rem != expRem || episode != expEpisode
-                || fireLevel != expFireLevel) {
-            logger.debug("replay mismatch at epoch " + i + " (t=" + e.t + "): state "
-                + state + " want " + expState + ", remLike " + rem + " want " + expRem
-                + ", episodeId " + episode + " want " + expEpisode + ", fire level "
-                + fireLevel + " want " + expFireLevel);
+    // Replays epochs [k * CHUNK, min(n, (k + 1) * CHUNK)) and checks each one.
+    function runChunk(logger as Test.Logger, k as Number) as Boolean {
+        var n = $.Fixtures.T.size();
+        var chunk = $.Fixtures.CHUNK;
+        if (pos < 0) {
+            logger.debug("replay chunk " + k + " skipped: an earlier replay chunk failed");
             return false;
         }
-        if (fireLevel > 0) {
-            fires += 1;
+        if (pos != k * chunk) {
+            logger.debug("replay chunk " + k + " expected position " + (k * chunk)
+                + " but replay is at " + pos + ": the testReplayNN chunks must run in order,"
+                + " as part of the full test suite (a single replay test fails by design)");
+            return false;
         }
+        if (k == 0) {
+            Test.assertEqual(n, 960);
+            Test.assertEqual($.Fixtures.MOTION.size(), n);
+            Test.assertEqual($.Fixtures.HR.size(), n);
+            Test.assertEqual($.Fixtures.VAR.size(), n);
+            Test.assertEqual($.Fixtures.EXP_STATE.size(), n);
+            Test.assertEqual($.Fixtures.EXP_REM.size(), n);
+            Test.assertEqual($.Fixtures.EXP_EPISODE.size(), n);
+            Test.assertEqual($.Fixtures.EXP_FIRE_LEVEL.size(), n);
+            // Defaults; calibrationMode (False in the generator) is not read by these units.
+            var cfg = new $.LcConfig();
+            sm = new $.SleepStateMachine(cfg);
+            rd = new $.RemDetector(cfg);
+            cc = new $.CueController(cfg);
+            fires = 0;
+        }
+        var smU = sm as SleepStateMachine;
+        var rdU = rd as RemDetector;
+        var ccU = cc as CueController;
+
+        var end = (k + 1) * chunk;
+        if (end > n) {
+            end = n;
+        }
+        for (var i = pos; i < end; i++) {
+            var e = new $.Epoch($.Fixtures.T[i] as Number, $.Fixtures.MOTION[i] as Number,
+                nullable($.Fixtures.HR[i] as Double), nullable($.Fixtures.VAR[i] as Double));
+            smU.step(e);
+            rdU.step(e, smU.state());
+            ccU.step(e, smU.state(), smU.onsetT(), rdU);
+
+            var state = smU.state();
+            var rem = rdU.remLike() ? 1 : 0;
+            var episode = rdU.episodeId();
+            var fireLevel = ccU.fire() ? ccU.level() : 0;
+            var expState = $.Fixtures.EXP_STATE[i] as Number;
+            var expRem = $.Fixtures.EXP_REM[i] as Number;
+            var expEpisode = $.Fixtures.EXP_EPISODE[i] as Number;
+            var expFireLevel = $.Fixtures.EXP_FIRE_LEVEL[i] as Number;
+            if (state != expState || rem != expRem || episode != expEpisode
+                    || fireLevel != expFireLevel) {
+                logger.debug("replay mismatch at epoch " + i + " (t=" + e.t + "): state "
+                    + state + " want " + expState + ", remLike " + rem + " want " + expRem
+                    + ", episodeId " + episode + " want " + expEpisode + ", fire level "
+                    + fireLevel + " want " + expFireLevel);
+                pos = -1;
+                return false;
+            }
+            if (fireLevel > 0) {
+                fires += 1;
+            }
+        }
+        pos = end;
+
+        if (end == n) {
+            // The night exercises the cue path (Python: two episodes of 30/45/60 ramps),
+            // and the controller's own counter agrees with the per-epoch fires.
+            Test.assert(fires > 0);
+            Test.assertEqual(ccU.cuesTonight(), fires);
+        }
+        return true;
     }
-    // The night exercises the cue path (Python: two episodes of 30/45/60 ramps), and
-    // the controller's own counter agrees with the per-epoch fires.
-    Test.assert(fires > 0);
-    Test.assertEqual(cc.cuesTonight(), fires);
-    return true;
 }

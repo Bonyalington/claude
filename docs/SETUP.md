@@ -147,6 +147,12 @@ monkeydo bin/LucidCueTest.prg epix2pro47mm -t
 - `monkeydo … -t` runs every `(:test)` function and prints a PASS/FAIL line
   for each, plus a summary. Every test should PASS.
 - To run one test: `monkeydo bin/LucidCueTest.prg epix2pro47mm -t testClampConfig`.
+- The replay tests `testReplay00`, `testReplay01`, … replay one scripted night
+  in chunks, in order, so they only pass as part of the full run. Run on its own,
+  a single replay test fails by design. If they fail with "Watchdog Tripped" or
+  "Code Executed Too Long", halve `CHUNK` in `tools/gen_fixtures.py`, then
+  regenerate with `.venv/bin/python tools/gen_fixtures.py > lucidcue/test/Fixtures.mc`
+  and rebuild.
 
 The `testLoadConfig…` test writes settings into the simulator's app storage
 and then restores the defaults. If it ever fails partway, reset the

@@ -2,9 +2,13 @@
 // Regenerate: .venv/bin/python tools/gen_fixtures.py > lucidcue/test/Fixtures.mc
 // Source: run_night(scripted_night(0)[0], Config(calibration_mode=False)), 960 epochs.
 import Toybox.Lang;
+import Toybox.Test;
 
 (:test)
 module Fixtures {
+    // Epochs per replay test (halve and regenerate if the watchdog trips).
+    const CHUNK = 60;
+
     // Epoch start, Unix seconds.
     const T = [
         1760000000, 1760000030, 1760000060, 1760000090, 1760000120, 1760000150, 1760000180, 1760000210, 1760000240, 1760000270,
@@ -804,4 +808,85 @@ module Fixtures {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0
     ];
+}
+
+// Sequential replay chunks; see ReplayTest.mc. They must run in order, as a full suite.
+(:test)
+function testReplay00(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 0);
+}
+
+(:test)
+function testReplay01(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 1);
+}
+
+(:test)
+function testReplay02(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 2);
+}
+
+(:test)
+function testReplay03(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 3);
+}
+
+(:test)
+function testReplay04(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 4);
+}
+
+(:test)
+function testReplay05(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 5);
+}
+
+(:test)
+function testReplay06(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 6);
+}
+
+(:test)
+function testReplay07(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 7);
+}
+
+(:test)
+function testReplay08(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 8);
+}
+
+(:test)
+function testReplay09(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 9);
+}
+
+(:test)
+function testReplay10(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 10);
+}
+
+(:test)
+function testReplay11(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 11);
+}
+
+(:test)
+function testReplay12(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 12);
+}
+
+(:test)
+function testReplay13(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 13);
+}
+
+(:test)
+function testReplay14(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 14);
+}
+
+(:test)
+function testReplay15(logger as Test.Logger) as Boolean {
+    return ReplayFix.runChunk(logger, 15);
 }
