@@ -87,3 +87,24 @@ function testLoadConfigReadsAndClampsProperties(logger as Test.Logger) as Boolea
     Test.assertEqual(c.noiseFloorMg, 30); Test.assertEqual(c.levelMax, 80);
     return true;
 }
+
+// Float -> Double snapping: 32-bit Floats widen to e.g. 0.0500000007d; the snap must
+// give exactly the Double literal so thresholds match the Python model.
+(:test)
+function testSnapFloatGivesExactDoubles(logger as Test.Logger) as Boolean {
+    Test.assertEqual(lcSnapFloat(0.05), 0.05d); Test.assertEqual(lcSnapFloat(1.3), 1.3d);
+    Test.assertEqual(lcSnapFloat(0.2), 0.2d); Test.assertEqual(lcSnapFloat(0.08), 0.08d);
+    Test.assertEqual(lcSnapFloat(1.95), 1.95d); Test.assertEqual(lcSnapFloat(4.5), 4.5d);
+    Test.assertEqual(lcSnapFloat(0.0), 0.0d); Test.assertEqual(lcSnapFloat(-0.05), -0.05d);
+    return true;
+}
+
+// With the properties.xml defaults (Floats 0.05 / 1.3 / 4.5), loadConfig must yield
+// the exact Double defaults, not the widened Float values.
+(:test)
+function testLoadConfigDefaultsAreExactDoubles(logger as Test.Logger) as Boolean {
+    var c = loadConfig();
+    Test.assertEqual(c.hrRise, 0.05d); Test.assertEqual(c.varRatio, 1.3d);
+    Test.assertEqual(c.earliestCueHours, 4.5d);
+    return true;
+}

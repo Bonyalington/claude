@@ -196,10 +196,16 @@ for you:
 - **A. Phone settings.** Open the Connect IQ app (or Garmin Connect) on your
   phone, find LucidCue under your watch's apps, and change the settings. Use
   this if LucidCue appears there.
-- **B. Change the defaults and rebuild (always works).** Edit the value in
+- **B. Change the defaults and rebuild.** Edit the value in
   `lucidcue/resources/properties.xml`, for example
   `<property id="calibrationMode" type="boolean">false</property>`, then
-  rebuild (§4) and re-copy the PRG (§6).
+  rebuild (§4) and re-copy the PRG (§6). **Important:** the watch keeps saved
+  setting values in `GARMIN/APPS/SETTINGS/LUCIDCUE.SET`. Phone settings and
+  the app's on-watch toggles both create this file, and it survives app
+  updates. While it exists, the watch ignores your new defaults. So when you
+  copy the new PRG, also **delete `GARMIN/APPS/SETTINGS/LUCIDCUE.SET` if it
+  is there**. Afterwards, redo any on-watch toggles you had changed: deleting
+  the file resets every setting to the new defaults.
 - **C. Simulator settings file (advanced, may differ by SDK version).** In the
   simulator, open *File → Edit Application.Properties* (or *App Settings
   Editor*), set the values, and run the app once. Then copy the generated
@@ -207,6 +213,13 @@ for you:
   to the watch's `GARMIN/APPS/SETTINGS/`.
 
 Where this guide says "set X in settings", use A if you can, otherwise B.
+
+**Always confirm that a change took effect.** At the start of every night the
+app writes the settings it is actually using into `LUCIDCUE.TXT`, as `k=v`
+pairs on the `night_start` line (e.g. `…,night_start,…hrRise=0.07…`). After
+changing a setting, start a short night (or check the next morning's log) and
+make sure the line shows your new values. If it shows the old ones, a saved
+`LUCIDCUE.SET` is overriding them (see B).
 
 ---
 
@@ -273,6 +286,10 @@ but the watch **never vibrates at night**. It only logs `wouldcue` events.
 After 3 nights you tune the REM thresholds to your own heart, then switch the
 cues on.
 
+**Before night 1**, create a folder for the log copies (from the repository
+root): `mkdir -p logs` on macOS / Linux, or `mkdir logs` on Windows. These
+logs are your personal health data: don't commit them.
+
 **Each of the 3 nights:**
 
 1. At bedtime, open LucidCue and run **Train** if you want to practise the
@@ -308,7 +325,8 @@ path of a plot in `calib/`. It then prints a line
 percentiles while asleep. Then:
 
 1. **Set the thresholds:** set `hrRise` and `varRatio` to the reported values
-   (§6, "Changing settings").
+   (§6, "Changing settings"). Then confirm that the next `night_start` line in
+   `LUCIDCUE.TXT` shows the new values.
 2. **Check stillness:** if the ASLEEP motion p90 is near or above 500, the
    `stillThreshold` (fixed at 500 in the app) is too low for you. Note the
    numbers so it can be changed in code.
@@ -316,7 +334,8 @@ percentiles while asleep. Then:
    it. The fix is lowering the accelerometer rate to 5 Hz in code.
 4. **Look at the plots** in `calib/`. Do the REM-like flags line up with
    Garmin's REM blocks?
-5. **Go live:** set `calibrationMode = false`. From now on the watch buzzes
+5. **Go live:** set `calibrationMode = false` (§6), and confirm that the next
+   `night_start` line shows `calibrationMode=false`. From now on the watch buzzes
    during detected REM, no earlier than `earliestCueHours` after you fall
    asleep. Keep training every bedtime, and review your morning answers
    weekly.
@@ -359,10 +378,16 @@ the results in a "Device findings" section at the end of this file.
       `GARMIN/APPS/LOGS/LUCIDCUE.TXT`, and that the app file is exactly
       `LucidCue.prg`. Record it if it still doesn't work.
 - [ ] **3 calibration nights** with `calibrationMode = true` (§8).
+- [ ] **Settings reach the watch:** change one setting by the method you will
+      use (§6 A, B or C), run a short night, and check that the `night_start`
+      line in `LUCIDCUE.TXT` shows the new value. If you used B, also check
+      that a stale `GARMIN/APPS/SETTINGS/LUCIDCUE.SET` was deleted. Note
+      which method worked.
 - [ ] **Run `tools/calibrate.py`** and set the reported `hrRise` /
-      `varRatio` (§8).
+      `varRatio` (§8). Confirm them on the next `night_start` line.
 - [ ] Note any `stillThreshold` or battery issues reported (§8).
-- [ ] **Set `calibrationMode = false`** to go live.
+- [ ] **Set `calibrationMode = false`** to go live, and confirm it on the next
+      `night_start` line.
 
 ---
 

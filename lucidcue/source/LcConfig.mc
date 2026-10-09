@@ -87,11 +87,26 @@ function lcReadNumber(key as String, dflt as Number) as Number {
     return dflt;
 }
 
+// Float -> Double, rounded to 4 decimals (half away from zero). A 32-bit Float such
+// as 0.05f widens to 0.0500000007d; snapping yields exactly the Double nearest to
+// the decimal the user typed (0.05d), so thresholds match the Python model.
+// All settings have <= 2 decimals, so 4 decimals loses nothing.
+function lcSnapFloat(f as Float) as Double {
+    var scaled = f.toDouble() * 10000.0d;
+    var n = 0l;
+    if (scaled >= 0.0d) {
+        n = (scaled + 0.5d).toLong();
+    } else {
+        n = -((0.5d - scaled).toLong());
+    }
+    return n.toDouble() / 10000.0d;
+}
+
 // Properties store floats as Float; convert to Double so REM maths matches Python.
 function lcReadDouble(key as String, dflt as Double) as Double {
     var v = lcReadProperty(key);
     if (v instanceof Float) {
-        return (v as Float).toDouble();
+        return lcSnapFloat(v as Float);
     }
     if (v instanceof Double) {
         return v as Double;
