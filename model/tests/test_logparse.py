@@ -25,7 +25,22 @@ def test_parse_single_night_and_skips_truncated():
     assert n.battery[0][1] == 90.0 and n.battery[1][1] == 84.0
     assert n.start_t == 1_760_000_000
     assert n.epochs[0].t == n.start_t
-    assert [ev[1] for ev in n.events] == ["night_start", "battery", "battery"]
+    assert [ev[1] for ev in n.events] == ["night_start", "battery", "battery", "night_end",
+                                          "morning"]
+
+
+def test_sample_log_decimals_match_watch_format():
+    # NightLog.mc: hrMean / hrBase at 1 decimal, hrVar / varBase at 2 (empty = null).
+    import re
+    one = re.compile(r"^(-?\d+\.\d)?$")
+    two = re.compile(r"^(-?\d+\.\d\d)?$")
+    rows = [ln.split(",") for ln in _read("sample_log.txt").splitlines()
+            if ln.startswith("E,") and ln.count(",") == 11]
+    assert len(rows) > 900
+    for p in rows:
+        assert one.match(p[4]) and one.match(p[6]), p
+        assert two.match(p[5]) and two.match(p[7]), p
+    assert any(p[7] for p in rows)   # varBase is set once the baseline exists
 
 
 def test_parse_null_fields():

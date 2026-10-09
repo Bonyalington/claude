@@ -166,6 +166,7 @@ cycle is not honoured on device, levels map to longer pulses instead
 
 One CSV line per epoch:
 `t,state,motion,hrMean,hrVar,hrBase,varBase,remLike,episode,cueEvent,level`
+(`hrMean` and `hrBase` at 1 decimal, `hrVar` and `varBase` at 2 decimals.)
 
 Event lines: night start/end, sleep onset, cue / would-cue, wake-after-cue,
 morning answers, battery % at start and end.

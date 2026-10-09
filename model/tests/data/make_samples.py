@@ -1,5 +1,8 @@
 """Regenerate sample_log.txt and sample_sleep.json from scripted_night(0) + run_night.
 
+The log uses the watch's format (NightLog.mc): hrMean / hrBase at 1 decimal, hrVar /
+varBase at 2, and the night ends with night_end then morning.
+
 Run from the model/ directory:  ../.venv/bin/python tests/data/make_samples.py
 """
 import json
@@ -19,6 +22,10 @@ def f1(x):
     return "" if x is None else "%.1f" % x
 
 
+def f2(x):
+    return "" if x is None else "%.2f" % x
+
+
 def gmt(t):
     return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.0")
 
@@ -32,11 +39,16 @@ def build_log(results):
         fired = r.cue.fire
         lines.append(",".join([
             "E", str(e.t), r.sleep.state, str(e.motion),
-            f1(e.hr_mean), f1(e.hr_var), f1(r.rem.hr_base), f1(r.rem.var_base),
+            f1(e.hr_mean), f2(e.hr_var), f1(r.rem.hr_base), f2(r.rem.var_base),
             "1" if r.rem.rem_like else "0", str(r.rem.episode_id),
             "cue" if fired else "", str(r.cue.level if fired else 0),
         ]))
+    cues = sum(1 for r in results if r.cue.fire)
+    wakes = sum(1 for r in results if r.cue.event == "wake_after_cue")
     lines.append("X,%d,battery,84.0" % t_last)
+    # As NightSession.stop() then MorningFlow write them (R15): night_end, then morning.
+    lines.append("X,%d,night_end,cues=%d;wakes=%d" % (t_last, cues, wakes))
+    lines.append("X,%d,morning,dream=0;felt=0;lucid=0" % t_last)
     lines.append("E,1760028000,ASL")  # truncated final line
     return "\n".join(lines) + "\n"
 

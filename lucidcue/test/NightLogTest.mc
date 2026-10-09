@@ -32,7 +32,8 @@ function testEpochLineFormat(logger as Test.Logger) as Boolean {
     return true;
 }
 
-// All fields set: floats at 1 decimal, remLike 1, episode id, cue event and level.
+// All fields set: hrMean / hrBase at 1 decimal, hrVar / varBase at 2, remLike 1,
+// episode id, cue event and level.
 (:test)
 function testEpochLineAllFields(logger as Test.Logger) as Boolean {
     var log = new NightLog();
@@ -40,11 +41,11 @@ function testEpochLineAllFields(logger as Test.Logger) as Boolean {
     rem.mRemLike = true;
     rem.mEpisodeId = 2;
     rem.mHrBase = 55.26d;
-    rem.mVarBase = 19.96d;
-    var line = log.epochLine(new Epoch(1760003450, 7, 59.0d, 30.44d), STATE_SETTLING, rem,
+    rem.mVarBase = 19.956d;
+    var line = log.epochLine(new Epoch(1760003450, 7, 59.0d, 30.444d), STATE_SETTLING, rem,
         "wouldcue", 45);
     logger.debug(line);
-    LcTestUtil.assertStr(line, "E,1760003450,SETTLING,7,59.0,30.4,55.3,20.0,1,2,wouldcue,45");
+    LcTestUtil.assertStr(line, "E,1760003450,SETTLING,7,59.0,30.44,55.3,19.96,1,2,wouldcue,45");
     Test.assertEqual(NightLogFix.fieldCount(line), 12);
     return true;
 }

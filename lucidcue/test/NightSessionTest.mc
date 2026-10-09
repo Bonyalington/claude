@@ -167,6 +167,8 @@ function testLiveModeVibratesAtCueLevels(logger as Test.Logger) as Boolean {
     logger.debug(line);
     Test.assert(NsFix.startsWith(line, "E,1760003450,ASLEEP,"));
     Test.assert(NsFix.hasSub(line, ",1,1,cue,30"));   // remLike 1, episode 1
+    // Whole line (Python trace): hrVar / varBase at 2 decimals; hrBase 55.30303... at 1.
+    LcTestUtil.assertStr(line, "E,1760003450,ASLEEP,100,59.0,20.00,55.3,20.00,1,1,cue,30");
     return true;
 }
 
