@@ -3,6 +3,7 @@ import Toybox.Math;
 
 // Per-epoch feature extraction from raw accelerometer, HR and interval data.
 // Rule-for-rule port of model/lucidcue_model/features.py. HR maths is in Double.
+// Global names used in expressions inside this module are written $.Name.
 module EpochFeatures {
 
     // Sum of per-sample deviation of |accel| from 1 g (1000 mg), minus the noise floor.
@@ -100,7 +101,7 @@ module EpochFeatures {
             zs as Array<Number>, hrSamples as Array<Number or Null>,
             intervals as Array<Number>, cfg as LcConfig) as Epoch {
         var hrVar = (intervals.size() >= 2) ? rmssd(intervals) : hrStd(hrSamples);
-        return new Epoch(t, motionScore(xs, ys, zs, cfg.noiseFloorMg),
+        return new $.Epoch(t, motionScore(xs, ys, zs, cfg.noiseFloorMg),
             hrMean(hrSamples), hrVar);
     }
 }

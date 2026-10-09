@@ -110,12 +110,16 @@ class SleepStateMachine {
                 mOnsetRun += 1;
                 if (mOnsetRun >= LcConst.ONSET_EPOCHS) {
                     mState = STATE_ASLEEP;
+                    // Python: onset_t is None or run_start_t - awake_since > ONSET_RESET_SEC.
                     // mOnsetT != null implies a wake out of ASLEEP happened, which set
                     // mAwakeSince; the null check only satisfies the type checker.
                     var since = mAwakeSince;
-                    if (mOnsetT == null
-                            || (since != null && mRunStartT - since > LcConst.ONSET_RESET_SEC)) {
+                    if (mOnsetT == null) {
                         mOnsetT = mRunStartT;
+                    } else if (since != null) {
+                        if (mRunStartT - since > LcConst.ONSET_RESET_SEC) {
+                            mOnsetT = mRunStartT;
+                        }
                     }
                 }
             } else {

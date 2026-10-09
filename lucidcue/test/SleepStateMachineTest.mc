@@ -5,13 +5,8 @@ import Toybox.Test;
 // (same values). Python's `f.last.state` / `f.last.onset_t` read the status of the
 // last step; here they are f.sm.state() / f.sm.onsetT() after the last step.
 
-// Asserts a nullable Number is non-null and equal to expected. Test-only helper.
-(:test)
-function lcAssertNum(actual as Number or Null, expected as Number) as Void {
-    Test.assert(actual != null);
-    Test.assertEqual(actual as Number, expected);
-}
-
+// Fixtures. A (:test) module, so ep() and asleepFeeder() are not (:test) functions
+// (the runner would call those as tests). Globals are referenced with $. from inside.
 (:test)
 module SsmFix {
     const T0 = 1760000000;
@@ -20,7 +15,7 @@ module SsmFix {
     const WAKE = 8000;
 
     function ep(i as Number, motion as Number, hr as Double or Null) as Epoch {
-        return new Epoch(T0 + 30 * i, motion, hr, 20.0d);
+        return new $.Epoch(T0 + 30 * i, motion, hr, 20.0d);
     }
 
     // Steps a machine with consecutive epochs, tracking the next epoch index.
@@ -29,14 +24,14 @@ module SsmFix {
         var i as Number = 0;
 
         function initialize() {
-            sm = new SleepStateMachine(new LcConfig());
+            sm = new $.SleepStateMachine(new $.LcConfig());
         }
 
         // Step n epochs; returns the first epoch index fed in this call.
         function feed(n as Number, motion as Number, hr as Double or Null) as Number {
             var first = i;
             for (var k = 0; k < n; k++) {
-                sm.step(SsmFix.ep(i, motion, hr));
+                sm.step($.SsmFix.ep(i, motion, hr));
                 i += 1;
             }
             return first;
@@ -47,8 +42,8 @@ module SsmFix {
         var f = new Feeder();
         f.feed(20, STILL, 66.0d);
         f.feed(30, STILL, 60.0d);
-        Test.assertEqual(f.sm.state(), STATE_ASLEEP);
-        lcAssertNum(f.sm.onsetT(), T0 + 30 * 20);
+        Test.assertEqual(f.sm.state(), $.STATE_ASLEEP);
+        $.LcTestUtil.assertNum(f.sm.onsetT(), T0 + 30 * 20);
         return f;
     }
 }
@@ -74,7 +69,7 @@ function testOnsetAfterRefAnd30LowEpochs(logger as Test.Logger) as Boolean {
     f.feed(1, SsmFix.STILL, 60.0d);
     Test.assertEqual(f.i - 1, 49);
     Test.assertEqual(f.sm.state(), STATE_ASLEEP);
-    lcAssertNum(f.sm.onsetT(), SsmFix.T0 + 30 * 20);
+    LcTestUtil.assertNum(f.sm.onsetT(), SsmFix.T0 + 30 * 20);
     return true;
 }
 
@@ -98,7 +93,7 @@ function testNullHrResetsOnsetRun(logger as Test.Logger) as Boolean {
     Test.assertEqual(f.sm.state(), STATE_SETTLING);
     f.feed(1, SsmFix.STILL, 60.0d);
     Test.assertEqual(f.sm.state(), STATE_ASLEEP);
-    lcAssertNum(f.sm.onsetT(), SsmFix.T0 + 30 * 50);
+    LcTestUtil.assertNum(f.sm.onsetT(), SsmFix.T0 + 30 * 50);
     return true;
 }
 
@@ -123,7 +118,7 @@ function testNonWakeMovementKeepsAsleep(logger as Test.Logger) as Boolean {
     var f = SsmFix.asleepFeeder();
     f.feed(10, SsmFix.MOD, 70.0d);
     Test.assertEqual(f.sm.state(), STATE_ASLEEP);
-    lcAssertNum(f.sm.onsetT(), SsmFix.T0 + 600);
+    LcTestUtil.assertNum(f.sm.onsetT(), SsmFix.T0 + 600);
     return true;
 }
 
@@ -133,7 +128,7 @@ function testShortWakeKeepsOnset(logger as Test.Logger) as Boolean {
     f.feed(4, SsmFix.WAKE, 80.0d);
     f.feed(30, SsmFix.STILL, 60.0d);
     Test.assertEqual(f.sm.state(), STATE_ASLEEP);
-    lcAssertNum(f.sm.onsetT(), SsmFix.T0 + 600);
+    LcTestUtil.assertNum(f.sm.onsetT(), SsmFix.T0 + 600);
     return true;
 }
 
@@ -145,7 +140,7 @@ function testLongWakeResetsOnset(logger as Test.Logger) as Boolean {
     var first = f.feed(30, SsmFix.STILL, 60.0d);
     Test.assertEqual(first, 50 + 80);
     Test.assertEqual(f.sm.state(), STATE_ASLEEP);
-    lcAssertNum(f.sm.onsetT(), SsmFix.T0 + 30 * first);
+    LcTestUtil.assertNum(f.sm.onsetT(), SsmFix.T0 + 30 * first);
     Test.assert(f.sm.onsetT() != SsmFix.T0 + 600);
     return true;
 }
@@ -161,7 +156,7 @@ function testSecondWakeStreakDoesNotResetAwakeSince(logger as Test.Logger) as Bo
     var first = f.feed(30, SsmFix.STILL, 60.0d);
     Test.assertEqual(first, 50 + 4 + 100 + 4);
     Test.assertEqual(f.sm.state(), STATE_ASLEEP);
-    lcAssertNum(f.sm.onsetT(), SsmFix.T0 + 30 * first);
+    LcTestUtil.assertNum(f.sm.onsetT(), SsmFix.T0 + 30 * first);
     return true;
 }
 
@@ -176,7 +171,7 @@ function testAwakeToSettlingEpochCountsTowardOnsetRun(logger as Test.Logger) as 
     f.feed(1, SsmFix.STILL, 60.0d);
     Test.assertEqual(f.i - 1, 49);
     Test.assertEqual(f.sm.state(), STATE_ASLEEP);
-    lcAssertNum(f.sm.onsetT(), SsmFix.T0 + 600);
+    LcTestUtil.assertNum(f.sm.onsetT(), SsmFix.T0 + 600);
     return true;
 }
 
@@ -189,7 +184,7 @@ function testStillEpochBeforeRefDoesNotStartRun(logger as Test.Logger) as Boolea
     Test.assertEqual(f.sm.state(), STATE_SETTLING);
     f.feed(1, SsmFix.STILL, 50.0d);      // index 49: run of 30 starting at index 20
     Test.assertEqual(f.sm.state(), STATE_ASLEEP);
-    lcAssertNum(f.sm.onsetT(), SsmFix.T0 + 600);
+    LcTestUtil.assertNum(f.sm.onsetT(), SsmFix.T0 + 600);
     return true;
 }
 

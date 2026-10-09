@@ -37,7 +37,12 @@ def hr_std(samples: list[int | None]) -> float | None:
     if len(v) < 2:
         return None
     m = sum(v) / len(v)
-    return math.sqrt(sum((s - m) ** 2 for s in v) / len(v))
+    # Plain loop, not sum(): Python 3.12+ sum() compensates float rounding; exact parity with the Monkey C port.
+    acc = 0.0
+    for s in v:
+        d = s - m
+        acc += d * d
+    return math.sqrt(acc / len(v))
 
 
 def rmssd(intervals_ms: list[int]) -> float | None:
