@@ -31,7 +31,7 @@ function testSampledEpochEmptyAxisUsesStillThreshold(logger as Test.Logger) as B
     return true;
 }
 
-// With accelerometer samples the motion is the normal motionScore (here at rest: 0).
+// With accelerometer samples the motion is the normal motionScore (1100 mg: 100 - 30 = 70).
 (:test)
 function testSampledEpochWithAccelUsesMotionScore(logger as Test.Logger) as Boolean {
     var cfg = new LcConfig();
