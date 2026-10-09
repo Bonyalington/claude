@@ -364,7 +364,9 @@ function testSecondStopWritesNothing(logger as Test.Logger) as Boolean {
     var log = new NsFix.FakeLog();
     var s = new NightSession(NsFix.cfg(false), log, new NsFix.FakeVibe(), NsFix.T0, 90.0);
     NsFix.feed(s, 0, 10, 2000, 66.0d, 20.0d);
+    Test.assertEqual(s.stopped(), false);
     var first = s.stop(NsFix.T0 + 300, 89.5);
+    Test.assertEqual(s.stopped(), true);
     var n = log.lines.size();
     var second = s.stop(NsFix.T0 + 400, 80.0);
     Test.assertEqual(log.lines.size(), n);

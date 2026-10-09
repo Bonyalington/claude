@@ -90,8 +90,11 @@ class NightDelegate extends WatchUi.BehaviorDelegate {
 
     // START: show the status overlay; START while it is up: "End night?".
     function onSelect() as Boolean {
+        if (mFlow != null) {
+            return true;
+        }
         var view = mView;
-        if (view == null || mFlow != null) {
+        if (view == null) {
             return true;
         }
         if (!view.overlayOn()) {
@@ -109,8 +112,11 @@ class NightDelegate extends WatchUi.BehaviorDelegate {
     // the Confirmation has been dismissed first, whatever order the firmware pops it in;
     // MorningFlow.begin() then replaces this Night view, so no stale Night view remains.
     function endNight() as Void {
+        if (mFlow != null) {
+            return;
+        }
         var ctrl = mCtrl;
-        if (ctrl == null || mFlow != null) {
+        if (ctrl == null) {
             return;
         }
         var summary = ctrl.stop();

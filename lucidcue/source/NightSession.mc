@@ -113,6 +113,10 @@ class NightSession {
         mSuppressed = true;
     }
 
+    function stopped() as Boolean {
+        return mStopped;
+    }
+
     function cuesSuppressed() as Boolean {
         return mSuppressed;
     }

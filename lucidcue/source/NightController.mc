@@ -9,8 +9,15 @@ var lcActiveNight as NightController or Null = null;
 
 // Starts a night and shows the Night screen. replace = true swaps out the current view
 // (Train -> Start Night); false pushes onto it (Menu -> Start Night). Either way the
-// stack is [Menu, Night].
+// stack is [Menu, Night]. Does nothing while another night is still running (a double
+// START must not orphan a running sampler and session).
 function lcStartNight(replace as Boolean) as Void {
+    var active = lcActiveNight;
+    if (active != null) {
+        if (!active.stopped()) {
+            return;
+        }
+    }
     var ctrl = new NightController();
     lcActiveNight = ctrl;
     var view = new NightView(ctrl);
@@ -51,6 +58,10 @@ class NightController {
 
     function session() as NightSession {
         return mSession;
+    }
+
+    function stopped() as Boolean {
+        return mStopped;
     }
 
     // SensorSampler callback, every 30 s.

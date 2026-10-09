@@ -54,12 +54,18 @@ class MorningFlow {
     }
 
     // Pushes the current question. Also called by START on the Morning view, in case a
-    // question was dismissed without an answer.
+    // question was dismissed without an answer. Once all three are answered it finishes
+    // instead, so START during the 100 ms before finish (or on "Done") cannot cancel the
+    // pending finish without running it.
     function ask() as Void {
-        cancel();
-        if (mStep >= QUESTIONS || mDone) {
+        if (mDone) {
             return;
         }
+        if (mStep >= QUESTIONS) {
+            finish();
+            return;
+        }
+        cancel();
         WatchUi.pushView(new WatchUi.Confirmation($.lcQuestion(mStep)),
             new MorningAnswerDelegate(self), WatchUi.SLIDE_IMMEDIATE);
     }
@@ -78,13 +84,14 @@ class MorningFlow {
         }
     }
 
-    // Logs the answers and replaces the Morning view with the Summary.
+    // Logs the answers and replaces the Morning view with the Summary. Runs at most once
+    // (the deferred timer and START via ask() may both reach it).
     function finish() as Void {
-        cancel();
         if (mDone) {
             return;
         }
         mDone = true;
+        cancel();
         var session = mSession;
         if (session != null) {
             session.logMorning(Time.now().value(), mAnswers[0], mAnswers[1], mAnswers[2]);
@@ -137,7 +144,8 @@ class MorningDelegate extends WatchUi.BehaviorDelegate {
         mFlow = flow;
     }
 
-    // START re-asks the current question (if one was dismissed without an answer).
+    // START re-asks the current question (if one was dismissed without an answer), or
+    // continues to the Summary once all three are answered.
     function onSelect() as Boolean {
         mFlow.ask();
         return true;
