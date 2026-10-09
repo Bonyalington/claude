@@ -194,3 +194,48 @@ def test_main_all_zero_truth_gives_no_recommendation(tmp_path, capsys):
 def _gmt(t):
     from datetime import datetime, timezone
     return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.0")
+
+
+def test_night_stats_counts_epochs_hours_gaps_and_end():
+    from calibrate import night_stats
+    from lucidcue_model.features import Epoch
+    from lucidcue_model.logparse import Night
+    n = Night(0, [Epoch(t, 0, None, None) for t in (0, 30, 60, 150, 180)])
+    n.events = [(0, "night_start", ""), (210, "night_end", ""), (215, "morning", "")]
+    st = night_stats(n)
+    assert st["epochs"] == 5
+    assert abs(st["hours"] - 210 / 3600) < 1e-12
+    assert abs(st["per_hour"] - 5 / (210 / 3600)) < 1e-9
+    assert st["gaps"] == 1                     # 60 -> 150 skips two epochs
+    assert st["ended"] is True
+    n.events = [(0, "night_start", ""), (100, "battery", "80.0")]
+    assert night_stats(n)["ended"] is False   # log cut short: no night_end / morning
+    empty = night_stats(Night(0))
+    assert (empty["epochs"], empty["hours"], empty["per_hour"], empty["gaps"]) == (0, 0.0, 0.0, 0)
+
+
+def test_main_skips_sleep_file_without_stages(tmp_path, capsys):
+    import calibrate
+    log = tmp_path / "LUCIDCUE.TXT"
+    _write_short_log(log, 40)
+    empty = tmp_path / "sleep_empty.json"
+    empty.write_text(json.dumps({"sleepLevels": None}))
+    missing = tmp_path / "sleep_missing.json"
+    missing.write_text("{}")
+    rc = calibrate.main([str(log), str(empty), str(missing), "--out", str(tmp_path / "c")])
+    out = capsys.readouterr().out
+    assert out.count("no sleep stages") == 2 and "skipped" in out
+    assert "0 sleep file(s) with stages" in out
+    assert "NO RECOMMENDATION" in out and rc != 0
+    assert "40 epochs over 0.33 h" in out and "per hour" in out
+
+
+def test_main_log_check_only_without_sleep_files(tmp_path, capsys):
+    import calibrate
+    log = tmp_path / "LUCIDCUE.TXT"
+    _write_short_log(log, 40)
+    rc = calibrate.main([str(log), "--out", str(tmp_path / "c")])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "log check only" in out and "40 epochs over 0.33 h" in out
+    assert "best" not in out and "NO RECOMMENDATION" not in out

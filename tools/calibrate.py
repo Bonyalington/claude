@@ -2,6 +2,9 @@
 
 Usage:
   python tools/calibrate.py LUCIDCUE.TXT sleep_2026-10-10.json [more.json ...] --out calib/
+  python tools/calibrate.py LUCIDCUE.TXT --out calib/     (log check only: no threshold search)
+
+Exit status 2 means no thresholds are recommended (see NO_RECOMMENDATION).
 """
 import argparse
 import json
@@ -143,6 +146,27 @@ def percentile(values, p):
     return s[int(round(p / 100.0 * (len(s) - 1)))]
 
 
+GAP_SEC = 45   # consecutive E lines further apart than 1.5 epochs: lines are missing
+END_EVENTS = ("night_end", "morning")
+
+
+def night_stats(night) -> dict:
+    """Log-survival check for one night: epoch count, hours spanned, epochs per hour
+    (about 120 for an intact log), gaps between E lines, and whether the night's last
+    event is night_end / morning (False: the log was cut short)."""
+    n = len(night.epochs)
+    hours = 0.0
+    if n > 0:
+        hours = (night.epochs[-1].t - night.epochs[0].t + EPOCH_SEC) / 3600.0
+    gaps = 0
+    for k in range(1, n):
+        if night.epochs[k].t - night.epochs[k - 1].t > GAP_SEC:
+            gaps += 1
+    ended = len(night.events) > 0 and night.events[-1][1] in END_EVENTS
+    return {"epochs": n, "hours": hours, "per_hour": n / hours if hours > 0 else 0.0,
+            "gaps": gaps, "ended": ended}
+
+
 def battery_drop(night):
     if len(night.battery) < 2:
         return None
@@ -190,21 +214,29 @@ def plot_night(night, results, stages, path):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("log")
-    ap.add_argument("sleep_json", nargs="+")
+    ap.add_argument("sleep_json", nargs="*")
     ap.add_argument("--out", default="calib")
     args = ap.parse_args(argv)
 
     with open(args.log) as f:
-        nights = parse_log(f.read())
+        text = f.read()
+    nights = parse_log(text)
     stage_sets = []
     for p in args.sleep_json:
         with open(p) as f:
-            stage_sets.append(load_garmin_stages(json.load(f)))
+            stages = load_garmin_stages(json.load(f))
+        if not stages:
+            print("warning: %s has no sleep stages (sleepLevels missing or empty); skipped" % p)
+            continue
+        stage_sets.append(stages)
     stages_by_night = match_stages(nights, stage_sets)
 
     cfg = Config()
     os.makedirs(args.out, exist_ok=True)
-    print("%d night(s) in log, %d sleep file(s)" % (len(nights), len(stage_sets)))
+    print("%d night(s) in log, %d sleep file(s) with stages" % (len(nights), len(stage_sets)))
+    first = next((ln for ln in text.splitlines() if ln.strip()), "")
+    if not first.startswith("X,") or ",night_start," not in first:
+        print("warning: the log does not start with a night_start line")
 
     asleep_motion = []
     for i, (night, stages) in enumerate(zip(nights, stages_by_night)):
@@ -215,8 +247,13 @@ def main(argv=None):
         drop = battery_drop(night)
         drop_txt = "n/a" if drop is None else "%.1f%%" % drop
         stage_txt = "no stages" if stages is None else "matched stages"
-        print("night %d (start %d): %d epochs, %s, battery drop %s"
-              % (i + 1, night.start_t, len(night.epochs), stage_txt, drop_txt))
+        st = night_stats(night)
+        end_txt = "ends with night_end/morning" if st["ended"] else \
+            "MISSING night_end/morning (log cut short?)"
+        print("night %d (start %d): %d epochs over %.2f h = %.1f per hour (expect about 120), "
+              "%d gap(s)" % (i + 1, night.start_t, st["epochs"], st["hours"], st["per_hour"],
+                             st["gaps"]))
+        print("  %s, %s, battery drop %s" % (end_txt, stage_txt, drop_txt))
         png = os.path.join(args.out, "night_%d_%d.png" % (i + 1, night.start_t))
         plot_night(night, results, stages, png)
         print("  plot: " + png)
@@ -238,6 +275,8 @@ def main(argv=None):
             print("best hrRise=%.2f varRatio=%.2f: precision=%.3f recall=%.3f f05=%.3f tp=%d"
                   % (hr_rise, var_ratio, best["precision"], best["recall"], best["f05"],
                      best["tp"]))
+    elif not args.sleep_json:
+        print("no sleep files given: log check only, no threshold search")
     else:
         print("no nights matched a sleep file")
         print(NO_RECOMMENDATION)

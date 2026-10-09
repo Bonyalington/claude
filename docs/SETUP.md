@@ -360,6 +360,21 @@ logs are your personal health data: don't commit them.
 5. Fetch that night's sleep stages (§7), e.g. `sleep_2026-10-10.json`. Check
    Garmin Connect still shows sleep stages for the night. If LucidCue running
    all night stopped Garmin's own sleep tracking, note it.
+6. **After night 1 only: check the log survived the whole night.** Open the
+   dated copy in a text editor. The first line should be an
+   `X,…,night_start,…` line, and the last lines should be `X,…,night_end,…`
+   and then `X,…,morning,…`. Then run the calibration script on that night
+   alone:
+   ```sh
+   .venv/bin/python tools/calibrate.py logs/LUCIDCUE_2026-10-10.TXT sleep_2026-10-10.json --out calib/
+   ```
+   Its `night 1` line reads `N epochs over H h = R per hour (expect about
+   120), G gap(s)`. Check that N is about 120 × the hours you were in bed, R
+   is close to 120, G is 0, and the next line says `ends with
+   night_end/morning`. If any check fails, the log was cut short or the app
+   was paused during the night. Record it in "Device findings" (§9): the
+   design's fallback (spec §2) is to keep the log in `Application.Storage`
+   and show it on the Summary screen, which needs a code change.
 
 **After night 3**, join the three logs into one file and run the calibration
 script:
@@ -409,8 +424,9 @@ Last come the motion percentiles while asleep. Then:
 ## 9. First-build probe checklist (do this before the calibration nights)
 
 These checks answer the open questions in the design spec (§2). Do them on
-the first evening the app is on the watch, while awake (about 15 min). Write
-the results in a "Device findings" section at the end of this file.
+the first evening the app is on the watch, while awake (about 15 min, plus a
+30–60 min hands-off run). Write the results in the "Device findings" section
+at the end of this file.
 
 - [ ] **Build and sideload** the app (§4, §6), with `LOGS/LUCIDCUE.TXT`
       created.
@@ -448,14 +464,33 @@ the results in a "Device findings" section at the end of this file.
 - [ ] If `LUCIDCUE.TXT` stayed empty: check the file is exactly
       `GARMIN/APPS/LOGS/LUCIDCUE.TXT`, and that the app file is exactly
       `LucidCue.prg`. Record it if it still doesn't work.
+- [ ] **Log survival probe (30–60 min):** empty `LUCIDCUE.TXT` (or note
+      where the new night starts), choose **Start Night**, and leave the
+      watch untouched with the display off for 30–60 minutes. If Sleep Mode
+      is scheduled for the evening, let the run go through its start time,
+      or turn Sleep Mode on by hand during the run. Then end the night as
+      above and copy `LUCIDCUE.TXT` to the computer. Check it with the
+      calibration script (no sleep file needed):
+      ```sh
+      .venv/bin/python tools/calibrate.py LUCIDCUE.TXT --out calib/
+      ```
+  - [ ] the `night 1` line shows about 120 epochs per hour (60 for a
+        30-minute run, 120 for an hour) and `0 gap(s)`
+  - [ ] the next line says `ends with night_end/morning`
+  - If either check fails, the watch paused or stopped the app with the
+    display off, or lost log lines. Record it in "Device findings". The
+    design's fallback (spec §2) is to keep the log in `Application.Storage`
+    and show it on the Summary screen, which needs a code change.
 - [ ] **3 calibration nights** with `calibrationMode = true` (§8).
 - [ ] **Settings reach the watch:** change one setting by the method you will
       use (§6 A, B or C), run a short night, and check that the `night_start`
       line in `LUCIDCUE.TXT` shows the new value. If you used B, also check
       that a stale `GARMIN/APPS/SETTINGS/LUCIDCUE.SET` was deleted. Note
       which method worked.
-- [ ] **Run `tools/calibrate.py`** and set the reported `hrRise` /
-      `varRatio` (§8). Confirm them on the next `night_start` line.
+- [ ] **After night 1:** check the log survived the whole night (§8, step 6).
+- [ ] **Run `tools/calibrate.py`** and, only if it printed a `best hrRise=…
+      varRatio=…` recommendation, set those values (§8). Confirm them on the
+      next `night_start` line.
 - [ ] Note any `stillThreshold` or battery issues reported (§8).
 - [ ] **Go live:** LucidCue → **Settings** → turn **Calibration mode** off,
       and confirm `calibrationMode=false` on the next `night_start` line.
@@ -465,5 +500,8 @@ the results in a "Device findings" section at the end of this file.
 ## Device findings
 
 _Fill in after the checklist above: watch size and device id, firmware
-version, Buzz test result, Sleep Mode result, `hbi` and `acc` values, battery drop per
-night, calibrated `hrRise` / `varRatio`._
+version, Buzz test result, Sleep Mode result, `hbi` and `acc` values, log
+survival (probe run and night 1: epochs per hour, gaps, does the log end with
+`night_end`/`morning`; if not, note the spec §2 `Application.Storage`
+fallback is needed), battery drop per night, calibrated `hrRise` /
+`varRatio`, and any build fixes from §4.1._
