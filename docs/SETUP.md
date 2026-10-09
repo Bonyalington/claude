@@ -1,0 +1,373 @@
+# LucidCue setup guide
+
+This guide takes you from a fresh computer to LucidCue running on your Garmin
+Epix Pro (Gen 2). It also covers copying the night log off the watch,
+calibrating the REM thresholds, and the first-build checklist.
+
+Nothing here needs prior Garmin development experience. Commands are shown for
+macOS / Linux (Terminal) and, where they differ, Windows (PowerShell or
+Command Prompt). Run every command from the **repository root**, the folder
+that contains `lucidcue/`, `model/`, `tools/` and `docs/`.
+
+> Garmin renames menus and buttons between SDK versions. Wherever this guide
+> names an SDK Manager, simulator or VS Code menu item, the exact wording
+> **may differ by SDK version**. Look for the closest match.
+
+---
+
+## 0. Find your watch size and its device id
+
+The Epix Pro (Gen 2) comes in three sizes. Each size is a separate "device" for
+the compiler, so you must build for yours.
+
+| Watch size | Device id (`-d …`) |
+|---|---|
+| 42 mm | `epix2pro42mm` |
+| 47 mm | `epix2pro47mm` |
+| 51 mm | `epix2pro51mm` |
+
+Ways to find your size, easiest first:
+
+1. **The box or receipt** names the size, e.g. "epix Pro (Gen 2) 47 mm".
+2. **The back of the watch** is usually engraved with the model and size.
+3. **Garmin Connect app** on your phone: tap the watch picture or *Devices*,
+   pick the watch, then look for *About* / *Device info*. That screen shows the
+   model name and often the size (may differ by app version).
+4. **Over USB:** plug the watch in and open `GARMIN/GarminDevice.xml` in a text
+   editor. The `<Description>` and part-number fields identify the model. As a
+   rough guide, 42 mm ≈ 010-02802, 47 mm ≈ 010-02803, 51 mm ≈ 010-02804. Trust
+   the box over these numbers if they disagree.
+
+All commands below use `epix2pro47mm`. **If your watch is 42 mm or 51 mm,
+replace `epix2pro47mm` with your id everywhere.**
+
+The ids above are our best knowledge. In step 1, check them against SDK
+Manager's device list. If Garmin uses different ids, use theirs in the
+commands and fix the three `<iq:product id="…"/>` lines in
+`lucidcue/manifest.xml`.
+
+---
+
+## 1. Install the Connect IQ SDK and the Epix Pro device files
+
+1. Install **Java** if you don't have it. The compiler (`monkeyc`) runs on
+   Java. Any current JDK (17 or newer) works, for example from
+   <https://adoptium.net>. Check it with `java -version`.
+2. Download **Connect IQ SDK Manager** from Garmin's developer site
+   (developer.garmin.com → Connect IQ → SDK). Install and open it, then sign in
+   with your Garmin account if it asks.
+3. In SDK Manager:
+   - **SDK tab:** download the newest SDK and click *Use as current SDK* (or a
+     similar button).
+   - **Devices tab:** search for "epix". Download the **epix Pro (Gen 2)**
+     entries for your size, or all three. Note the device id shown for each,
+     e.g. `epix2pro47mm` (see step 0).
+4. Put the SDK's `bin` folder on your `PATH` so `monkeyc`, `monkeydo` and
+   `connectiq` work in a terminal. The SDK usually lives in one of these
+   places (the version number in the folder name varies):
+   - macOS: `~/Library/Application Support/Garmin/ConnectIQ/Sdks/connectiq-sdk-mac-<version>/bin`
+   - Windows: `%APPDATA%\Garmin\ConnectIQ\Sdks\connectiq-sdk-win-<version>\bin`
+   - Linux: `~/.Garmin/ConnectIQ/Sdks/connectiq-sdk-lin-<version>/bin`
+
+   macOS / Linux: add this line to `~/.zshrc` or `~/.bashrc`, then open a new
+   terminal:
+   ```sh
+   export PATH="$PATH:<the bin folder above>"
+   ```
+   Windows: open *Start* → "Edit the system environment variables" →
+   *Environment Variables* → under your user, edit **Path** → *New* → paste
+   the bin folder, then open a new terminal.
+5. Check it worked: `monkeyc --version` should print a version number.
+
+## 2. (Optional) Install VS Code and the Monkey C extension
+
+You don't need this to build. It gives syntax highlighting, error squiggles
+and build buttons.
+
+1. Install Visual Studio Code.
+2. Open *Extensions*, search for **Monkey C** (publisher: Garmin), and install
+   it.
+3. Run *Monkey C: Verify Installation* from the command palette
+   (Ctrl/Cmd+Shift+P). The command name may differ by extension version.
+
+## 3. Generate a developer key (once)
+
+Every build is signed with your own private key. Generate it once and keep it.
+**Never commit it.** The repository's `.gitignore` already ignores `*.der` and
+`*.pem`, but the safest place is outside the repository.
+
+macOS / Linux (Windows: run the same command in **Git Bash**, which includes
+`openssl`):
+
+```sh
+openssl genrsa -out developer_key.pem 4096 && openssl pkcs8 -topk8 -inform PEM -outform DER -in developer_key.pem -out developer_key.der -nocrypt
+```
+
+This creates `developer_key.pem` and `developer_key.der`. The build uses the
+`.der` file. The commands below assume it sits in the repository root. If you
+moved it, for example to `~/garmin/developer_key.der`, change the path after
+`-y` to match.
+
+Without `openssl`, VS Code's *Monkey C: Generate a Developer Key* command does
+the same job.
+
+Back the key up. Builds signed with a different key may not be able to read
+the app's saved data.
+
+## 4. Build the app
+
+```sh
+mkdir -p bin
+monkeyc -f lucidcue/monkey.jungle -d epix2pro47mm -o bin/LucidCue.prg -y developer_key.der
+```
+
+(Windows Command Prompt: `mkdir bin`, then the same `monkeyc` line.)
+
+The output **must** be named `LucidCue.prg`. The watch names the log file
+after the PRG, so this name gives you `LUCIDCUE.TXT`.
+
+On success the compiler prints `BUILD SUCCESSFUL` (or similar) and creates
+`bin/LucidCue.prg`. A warning that the launcher icon is "not the expected
+size" and will be scaled is harmless.
+
+## 5. Run the unit tests (in the simulator)
+
+Build the test version, start the simulator, then run the tests in it:
+
+```sh
+monkeyc -f lucidcue/monkey.jungle -d epix2pro47mm -o bin/LucidCueTest.prg -y developer_key.der -t
+connectiq &
+monkeydo bin/LucidCueTest.prg epix2pro47mm -t
+```
+
+- `connectiq &` starts the simulator in the background. Wait until its window
+  appears before running `monkeydo`. On Windows, run `connectiq` in a
+  **separate** terminal window instead of using `&`. You can also start the
+  simulator from VS Code.
+- `monkeydo … -t` runs every `(:test)` function and prints a PASS/FAIL line
+  for each, plus a summary. Every test should PASS.
+- To run one test: `monkeydo bin/LucidCueTest.prg epix2pro47mm -t testClampConfig`.
+
+The `testLoadConfig…` test writes settings into the simulator's app storage
+and then restores the defaults. If it ever fails partway, reset the
+simulator's app data (*File → Reset All App Data*, or similar).
+
+## 6. Sideload the app onto the watch (USB)
+
+1. Connect the watch to the computer with its USB cable.
+2. Open the watch's storage:
+   - **Windows:** it appears in File Explorer as a device (e.g. "epix Pro").
+     Open *Internal Storage* (or similar).
+   - **macOS:** macOS can't open Garmin watches (MTP devices) by itself.
+     Install **OpenMTP** (<https://openmtp.ganeshrvel.com>), quit Garmin
+     Express if it is running, then open OpenMTP and pick the watch.
+   - **Linux:** most file managers (GNOME Files, Dolphin) show the watch as an
+     MTP device. If yours doesn't, install `jmtpfs` or `go-mtpfs` and mount
+     it.
+3. Copy `bin/LucidCue.prg` into the watch's **`GARMIN/APPS/`** folder.
+4. **Create the log file (once).** On your computer, create an empty text file
+   named exactly `LUCIDCUE.TXT`:
+   - macOS / Linux: `touch LUCIDCUE.TXT`
+   - Windows: `type nul > LUCIDCUE.TXT` (Command Prompt), or create it in
+     Notepad and save it with no content. Make sure Windows didn't add `.txt`
+     twice.
+
+   On the watch, open `GARMIN/APPS/`. Create a folder **`LOGS`** there if it
+   doesn't exist, and copy the empty `LUCIDCUE.TXT` into it, giving
+   **`GARMIN/APPS/LOGS/LUCIDCUE.TXT`**. The watch writes to this file only
+   if it already exists.
+5. Safely eject or disconnect the watch. LucidCue appears in the watch's
+   apps list (press START → scroll to *LucidCue*). You may need to add it via
+   *Edit apps* / *Add* on some firmware.
+
+To update the app later, rebuild (§4) and copy the new `LucidCue.prg` over the
+old one. Don't delete `LOGS/LUCIDCUE.TXT`.
+
+### Changing settings on a sideloaded app
+
+The settings are `calibrationMode`, `earliestCueHours`, `maxCuesPerNight`,
+`startLevel`, `trainReps`, `hrRise`, `varRatio` and `vibeByLength`. The watch
+clamps every value to its allowed range when it loads them.
+
+**Sideloaded apps often don't show up in the phone's Connect IQ app settings.**
+Garmin delivers phone settings through the Store. Use whichever option works
+for you:
+
+- **A. Phone settings.** Open the Connect IQ app (or Garmin Connect) on your
+  phone, find LucidCue under your watch's apps, and change the settings. Use
+  this if LucidCue appears there.
+- **B. Change the defaults and rebuild (always works).** Edit the value in
+  `lucidcue/resources/properties.xml`, for example
+  `<property id="calibrationMode" type="boolean">false</property>`, then
+  rebuild (§4) and re-copy the PRG (§6).
+- **C. Simulator settings file (advanced, may differ by SDK version).** In the
+  simulator, open *File → Edit Application.Properties* (or *App Settings
+  Editor*), set the values, and run the app once. Then copy the generated
+  `LUCIDCUE.SET` from the simulator's temporary `GARMIN/APPS/SETTINGS/` folder
+  to the watch's `GARMIN/APPS/SETTINGS/`.
+
+Where this guide says "set X in settings", use A if you can, otherwise B.
+
+---
+
+## 7. Get Garmin's sleep stages as JSON (for calibration)
+
+Calibration compares LucidCue's REM guesses with the sleep stages Garmin
+Connect shows for the same night. You fetch those with the unofficial
+`garminconnect` Python library.
+
+**One-time setup** (from the repository root):
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r model/requirements.txt
+.venv/bin/pip install garminconnect
+```
+
+Windows: use `py -m venv .venv`, then `.venv\Scripts\pip install -r model\requirements.txt`
+and `.venv\Scripts\pip install garminconnect`.
+
+**Each morning:** first let the watch sync to Garmin Connect on your phone.
+Then save this as `fetch_sleep.py`, anywhere outside the repository or in a
+git-ignored folder:
+
+```python
+import getpass
+import json
+import sys
+
+from garminconnect import Garmin
+
+date = sys.argv[1]  # the date you WOKE UP, e.g. 2026-10-10
+email = input("Garmin email: ")
+pw = getpass.getpass("Garmin password: ")
+api = Garmin(email, pw)
+api.login()
+data = api.get_sleep_data(date)
+with open("sleep_%s.json" % date, "w") as f:
+    json.dump(data, f)
+print("saved sleep_%s.json (%d sleepLevels)" % (date, len(data.get("sleepLevels") or [])))
+```
+
+Run it with the morning's date:
+
+```sh
+.venv/bin/python fetch_sleep.py 2026-10-10
+```
+
+- Garmin files a night under the date you **woke up**: the night of 9→10 Oct
+  is `2026-10-10`.
+- If the script reports `0 sleepLevels`, Garmin has no stages for that night.
+  Check the watch synced, and that Garmin Connect shows deep/light/REM for it.
+- If your account uses two-factor authentication, the library may prompt for
+  a code, or need a newer version (`pip install -U garminconnect`).
+- Your password is typed at the prompt, not stored. Don't hard-code it in the
+  script.
+
+---
+
+## 8. Calibration routine (first 3 nights)
+
+New installs start with `calibrationMode = true`. Everything runs and logs,
+but the watch **never vibrates at night**. It only logs `wouldcue` events.
+After 3 nights you tune the REM thresholds to your own heart, then switch the
+cues on.
+
+**Each of the 3 nights:**
+
+1. At bedtime, open LucidCue and run **Train** if you want to practise the
+   cue. Then choose **Start Night** and go to sleep wearing the watch snugly.
+   The screen stays black.
+2. In the morning, press START to show the status screen, press START again,
+   and confirm **End night**. Answer the three morning questions.
+3. Connect the watch over USB and copy `GARMIN/APPS/LOGS/LUCIDCUE.TXT` to
+   your computer as a dated copy, e.g. `logs/LUCIDCUE_2026-10-10.TXT`.
+4. Replace the watch's `LUCIDCUE.TXT` with a fresh **empty** one (same name,
+   same folder). Each copy then holds exactly one night, and the file never
+   grows too large.
+5. Fetch that night's sleep stages (§7), e.g. `sleep_2026-10-10.json`. Check
+   Garmin Connect still shows sleep stages for the night. If LucidCue running
+   all night stopped Garmin's own sleep tracking, note it.
+
+**After night 3**, join the three logs into one file and run the calibration
+script:
+
+```sh
+cat logs/LUCIDCUE_2026-10-10.TXT logs/LUCIDCUE_2026-10-11.TXT logs/LUCIDCUE_2026-10-12.TXT > LUCIDCUE.TXT
+.venv/bin/python tools/calibrate.py LUCIDCUE.TXT sleep_2026-10-10.json sleep_2026-10-11.json sleep_2026-10-12.json --out calib/
+```
+
+Windows (Command Prompt):
+`copy /b logs\LUCIDCUE_2026-10-10.TXT+logs\LUCIDCUE_2026-10-11.TXT+logs\LUCIDCUE_2026-10-12.TXT LUCIDCUE.TXT`,
+then `.venv\Scripts\python tools\calibrate.py LUCIDCUE.TXT sleep_2026-10-10.json sleep_2026-10-11.json sleep_2026-10-12.json --out calib\`.
+(macOS / Linux can also write `sleep_*.json`.)
+
+The script prints, for each night, the epoch count, the battery drop and the
+path of a plot in `calib/`. It then prints a line
+`best hrRise=… varRatio=…` with precision and recall, plus the motion
+percentiles while asleep. Then:
+
+1. **Set the thresholds:** set `hrRise` and `varRatio` to the reported values
+   (§6, "Changing settings").
+2. **Check stillness:** if the ASLEEP motion p90 is near or above 500, the
+   `stillThreshold` (fixed at 500 in the app) is too low for you. Note the
+   numbers so it can be changed in code.
+3. **Check battery:** the drop should be ≤ 10% per night. If it's more, note
+   it. The fix is lowering the accelerometer rate to 5 Hz in code.
+4. **Look at the plots** in `calib/`. Do the REM-like flags line up with
+   Garmin's REM blocks?
+5. **Go live:** set `calibrationMode = false`. From now on the watch buzzes
+   during detected REM, no earlier than `earliestCueHours` after you fall
+   asleep. Keep training every bedtime, and review your morning answers
+   weekly.
+
+---
+
+## 9. First-build probe checklist (do this before the calibration nights)
+
+These checks answer the open questions in the design spec (§2). Do them on
+the first evening the app is on the watch, while awake (about 15 min). Write
+the results in a "Device findings" section at the end of this file.
+
+- [ ] **Build and sideload** the app (§4, §6), with `LOGS/LUCIDCUE.TXT`
+      created.
+- [ ] **Vibration strength:** open LucidCue → **Buzz test**. It plays strength
+      10, 30, 50 and 80. Do the later buzzes feel stronger?
+  - Yes: strength works. Keep `vibeByLength = false`.
+  - No difference: set **`vibeByLength = true`** (§6). The app will then
+    ramp by pulse length instead.
+- [ ] **Sleep Mode / Do Not Disturb:** turn on the watch's Sleep Mode (or
+      DND), the way it will be at night, and run **Buzz test** again. Does it
+      still vibrate?
+  - Yes: good.
+  - No (silent): this is a **blocker**. The app cannot cue you during sleep.
+    Record it and stop here.
+- [ ] **2-minute Night run:** choose **Start Night**, wait at least 2 minutes,
+      then press START, START again and confirm **End night**. Answer the
+      morning questions. Copy `LUCIDCUE.TXT` to the computer and open it in
+      a text editor. It should contain:
+  - [ ] an `X,…,night_start,…` line
+  - [ ] an `X,…,caps,hbi=…` line
+  - [ ] at least 3 `E,…` lines (one every 30 seconds)
+  - [ ] an `X,…,morning,…` line
+  - [ ] an `X,…,night_end,…` line
+- [ ] **Beat-to-beat data:** in the `caps` line, is it `hbi=1` or `hbi=0`?
+  - `hbi=1`: beat-to-beat intervals are available. Variability uses RMSSD.
+  - `hbi=0`: not available on your watch or firmware. The app automatically
+    falls back to heart-rate standard deviation. Note it.
+- [ ] If `LUCIDCUE.TXT` stayed empty: check the file is exactly
+      `GARMIN/APPS/LOGS/LUCIDCUE.TXT`, and that the app file is exactly
+      `LucidCue.prg`. Record it if it still doesn't work.
+- [ ] **3 calibration nights** with `calibrationMode = true` (§8).
+- [ ] **Run `tools/calibrate.py`** and set the reported `hrRise` /
+      `varRatio` (§8).
+- [ ] Note any `stillThreshold` or battery issues reported (§8).
+- [ ] **Set `calibrationMode = false`** to go live.
+
+---
+
+## Device findings
+
+_Fill in after the checklist above: watch size and device id, firmware
+version, Buzz test result, Sleep Mode result, `hbi` value, battery drop per
+night, calibrated `hrRise` / `varRatio`._

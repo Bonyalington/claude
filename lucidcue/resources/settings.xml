@@ -1,0 +1,28 @@
+<!-- Phone (Connect IQ app) settings UI. min/max are a first line of defence only;
+     loadConfig() clamps every value again on the watch. -->
+<settings>
+    <setting propertyKey="@Properties.calibrationMode" title="@Strings.CalibrationModeTitle">
+        <settingConfig type="boolean"/>
+    </setting>
+    <setting propertyKey="@Properties.earliestCueHours" title="@Strings.EarliestCueHoursTitle" prompt="@Strings.EarliestCueHoursPrompt">
+        <settingConfig type="numeric" min="2.0" max="7.0" errorMessage="@Strings.EarliestCueHoursError"/>
+    </setting>
+    <setting propertyKey="@Properties.maxCuesPerNight" title="@Strings.MaxCuesPerNightTitle" prompt="@Strings.MaxCuesPerNightPrompt">
+        <settingConfig type="numeric" min="1" max="10" errorMessage="@Strings.MaxCuesPerNightError"/>
+    </setting>
+    <setting propertyKey="@Properties.startLevel" title="@Strings.StartLevelTitle" prompt="@Strings.StartLevelPrompt">
+        <settingConfig type="numeric" min="10" max="80" errorMessage="@Strings.StartLevelError"/>
+    </setting>
+    <setting propertyKey="@Properties.trainReps" title="@Strings.TrainRepsTitle" prompt="@Strings.TrainRepsPrompt">
+        <settingConfig type="numeric" min="3" max="10" errorMessage="@Strings.TrainRepsError"/>
+    </setting>
+    <setting propertyKey="@Properties.hrRise" title="@Strings.HrRiseTitle" prompt="@Strings.HrRisePrompt">
+        <settingConfig type="numeric" min="0.0" max="0.2" errorMessage="@Strings.HrRiseError"/>
+    </setting>
+    <setting propertyKey="@Properties.varRatio" title="@Strings.VarRatioTitle" prompt="@Strings.VarRatioPrompt">
+        <settingConfig type="numeric" min="1.0" max="2.0" errorMessage="@Strings.VarRatioError"/>
+    </setting>
+    <setting propertyKey="@Properties.vibeByLength" title="@Strings.VibeByLengthTitle">
+        <settingConfig type="boolean"/>
+    </setting>
+</settings>
