@@ -5,7 +5,7 @@ import Toybox.WatchUi;
 
 // Bedtime training: plays the cue at startLevel trainReps times, 30 s apart (the first
 // right away). Between buzzes it shows the reality-check prompt and "n / reps"; after the
-// last cue it keeps the prompt (the user does that check now) and adds "Start Night →",
+// last cue it keeps the prompt (the user does that check now) and adds "Start Night >",
 // and START then starts the night (replacing this view, so the
 // stack is [Menu, Night]). Back returns to the menu.
 class TrainView extends WatchUi.View {
@@ -73,7 +73,7 @@ class TrainView extends WatchUi.View {
         var count = mRep.toString() + " / " + mReps;
         if (done()) {
             $.lcDrawScreen(dc, ["Look at your hands", "Am I dreaming?", count,
-                "Start Night →"] as Array<String>);
+                "Start Night >"] as Array<String>);
         } else {
             $.lcDrawScreen(dc, ["Look at your hands", "Am I dreaming?", count] as Array<String>);
         }

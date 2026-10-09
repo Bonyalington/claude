@@ -176,7 +176,7 @@ it, a night still runs but logs empty heart rate.
       and **Settings**.
 - [ ] **Train** buzzes at once and shows "Look at your hands", "Am I
       dreaming?" and "1 / 5". About every 30 s it buzzes again and the count
-      goes up. After the last one it shows "Start Night →". START opens the
+      goes up. After the last one it shows "Start Night >". START opens the
       black Night screen.
 - [ ] **Start Night** (from the menu) shows a black screen. Back does
       nothing.
