@@ -164,9 +164,9 @@ every fix you make in "Device findings".
 | Symptom | File | Likely fix |
 |---|---|---|
 | Helper functions such as `LcTestUtil.near` or `NsFix.feed` are run as tests and fail | the `(:test) module`s in `test/` | The runner treats functions inside `(:test)` modules as tests. Move the helpers into a class inside the module (only functions are run as tests) and call them through it. |
-| Out of memory, or "Watchdog Tripped" before any replay test has run | `test/Fixtures.mc` (about 7,700 literals that initialise at load) | Change `tools/gen_fixtures.py` to return each array from a function (`Fixtures.hr()` and so on), and update `test/ReplayTest.mc` to match. |
-| `testReplay00`, `testReplay01`, … fail with "Watchdog Tripped" / "Code Executed Too Long" | `tools/gen_fixtures.py` (`CHUNK`) | Halve `CHUNK`, regenerate `lucidcue/test/Fixtures.mc` (§5), rebuild. The Python tests follow the new value. |
-| `testReplay01` and later fail with "… the testReplayNN chunks must run in order" | `test/ReplayTest.mc` | The runner reorders tests, or resets module state between them. Run the full suite, not a filtered test. If it still fails, the replay needs a per-chunk state checkpoint (a code change). Record it. |
+| Out of memory, or "Watchdog Tripped" before any replay test has run | `test/Fixtures.mc` (about 11,500 literals, 5,200 of them Doubles, that initialise at load) | Change `tools/gen_fixtures.py` to return each array from a function (`Fixtures.hr()` and so on), and update `test/ReplayTest.mc` to match. Most of the Doubles are the checkpoint baselines (`SNAP_BASE_HR` / `SNAP_BASE_VAR`). Emitting those as epoch indices into `HR` / `VAR` would make them Numbers, which take less memory. |
+| A `testReplayNN` fails with "Watchdog Tripped" / "Code Executed Too Long" | `tools/gen_fixtures.py` (`CHUNK`) | Halve `CHUNK`, regenerate `lucidcue/test/Fixtures.mc` (§5), rebuild. The Python tests follow the new value. `testReplay00` passing doesn't prove the later chunks fit. Sleep onset is around epoch 49, so its baseline window is almost empty. Later chunks start from a checkpoint with a full 120-entry baseline, about 60 × 6,500 bytecodes per chunk, so they are the ones most likely to trip. |
+| A `testReplayNN` fails with "replay mismatch at epoch …" or "cuesTonight … want …", while the unit tests pass | `restore()` in `source/SleepStateMachine.mc`, `source/RemDetector.mc`, `source/CueController.mc`; `test/ReplayTest.mc` | Each chunk restores fresh units from a Python checkpoint (`SNAP_*` in `test/Fixtures.mc`). A mismatch in the chunk's first few epochs points to a field restored from the wrong position. Compare the `restore(...)` arguments in `ReplayFix.runChunk` with the field order in the `SNAP_*` comments. A mismatch later in the chunk is a real parity difference with the Python model. Record it. |
 | `testLoadConfigReadsAndClampsProperties` errors on `Properties.setValue` | `test/LcConfigTest.mc` | Properties aren't writable in test mode. Delete that one test (the clamp and default tests cover the logic), then reset the simulator's app data. |
 | `testSqrtReturnsDouble` fails | `source/EpochFeatures.mc` | `Math.sqrt` returns a 32-bit Float. Motion and HR maths then differ slightly from the Python model. Record it. The fix is a Double square root (Newton refinement), which is a code change. |
 | Exact-string tests fail by one digit in the last decimal | `test/NightLogTest.mc`, `test/NightSessionTest.mc` | `Double.format` rounds differently from C `printf`. Record it. Only the expected strings need to change. |
@@ -199,11 +199,13 @@ monkeydo bin/LucidCueTest.prg epix2pro47mm -t
   for each, plus a summary. Every test should PASS.
 - To run one test: `monkeydo bin/LucidCueTest.prg epix2pro47mm -t testClampConfig`.
 - The replay tests `testReplay00`, `testReplay01`, … replay one scripted night
-  in chunks, in order, so they only pass as part of the full run. Run on its own,
-  a single replay test fails by design. If they fail with "Watchdog Tripped" or
-  "Code Executed Too Long", halve `CHUNK` in `tools/gen_fixtures.py`, then
-  regenerate with `.venv/bin/python tools/gen_fixtures.py > lucidcue/test/Fixtures.mc`
-  and rebuild.
+  in chunks of `CHUNK` epochs. The chunks are independent: each one starts
+  from a checkpoint of the Python model's state, so you can run any one of
+  them on its own (`monkeydo bin/LucidCueTest.prg epix2pro47mm -t testReplay07`),
+  or in any order. If one fails with "Watchdog Tripped" or "Code Executed Too
+  Long", halve `CHUNK` in `tools/gen_fixtures.py`, then regenerate with
+  `.venv/bin/python tools/gen_fixtures.py > lucidcue/test/Fixtures.mc` and
+  rebuild.
 
 The `testLoadConfig…` test writes settings into the simulator's app storage
 and then restores the defaults. If it ever fails partway, reset the
