@@ -15,6 +15,7 @@ AWAKE, SETTLING, ASLEEP = "AWAKE", "SETTLING", "ASLEEP"
 
 @dataclass(frozen=True)
 class SleepStatus:
+    # onset_t persists after the first onset; consumers must gate on state == ASLEEP.
     state: str
     onset_t: int | None
 
@@ -56,7 +57,7 @@ class SleepStateMachine:
             self.wake_run += 1
             self.onset_run = 0
             if self.wake_run >= WAKE_EPOCHS:
-                if self.state != AWAKE:
+                if self.state == ASLEEP:  # only the first wake streak after being asleep
                     self.awake_since = self.wake_run_start_t
                 self.state = AWAKE
             return SleepStatus(self.state, self.onset_t)

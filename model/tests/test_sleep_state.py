@@ -120,3 +120,40 @@ def test_long_wake_resets_onset():
     assert f.last.state == ASLEEP
     assert f.last.onset_t == T0 + 30 * first
     assert f.last.onset_t != T0 + 600
+
+
+def test_second_wake_streak_does_not_reset_awake_since():
+    f = asleep_feeder()
+    f.feed(4, WAKE, 80)             # A1: first wake streak after sleep
+    f.feed(100, STILL, 66)          # ~50 min SETTLING, hr == ref so no onset
+    assert f.last.state == SETTLING
+    f.feed(4, WAKE, 80)             # A2: must not overwrite awake_since
+    assert f.last.state == AWAKE
+    first = f.feed(30, STILL, 60)
+    assert first == 50 + 4 + 100 + 4
+    assert f.last.state == ASLEEP
+    assert f.last.onset_t == T0 + 30 * first
+
+
+def test_awake_to_settling_epoch_counts_toward_onset_run():
+    f = Feeder()
+    f.feed(20, MOD, 66)
+    assert f.last.state == AWAKE
+    f.feed(29, STILL, 60)
+    assert f.i - 1 == 48
+    assert f.last.state == SETTLING
+    f.feed(1, STILL, 60)
+    assert f.i - 1 == 49
+    assert f.last.state == ASLEEP
+    assert f.last.onset_t == T0 + 600
+
+
+def test_still_epoch_before_ref_does_not_start_run():
+    f = Feeder()
+    f.feed(10, STILL, 70)
+    f.feed(10, STILL, 50)           # ref = 60; indices 10-19 are low but < REF_EPOCHS
+    f.feed(29, STILL, 50)           # indices 20-48
+    assert f.last.state == SETTLING
+    f.feed(1, STILL, 50)            # index 49: run of 30 starting at index 20
+    assert f.last.state == ASLEEP
+    assert f.last.onset_t == T0 + 600
