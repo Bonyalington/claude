@@ -70,7 +70,8 @@ class NightController {
     }
 
     // 60 s after start: log X,<t>,caps,hbi=<0|1>;acc=<0|1>. Without accelerometer data
-    // motion reads as perfectly still, so buzzing is turned off for the night (R16a).
+    // the app cannot tell awake from asleep, so buzzing is turned off for the night
+    // (R16a; epochs without samples also get motion = stillThreshold, lcSampledEpoch).
     function onCaps() as Void {
         mCapsTimer = null;
         if (mStopped) {

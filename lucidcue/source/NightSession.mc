@@ -106,8 +106,8 @@ class NightSession {
             + "\nCues: " + mCue.cuesTonight();
     }
 
-    // No-vibrate mode for the rest of the night (R16a: no accelerometer data means
-    // motion reads as perfectly still, which could buzz an awake user). From now on a
+    // No-vibrate mode for the rest of the night (R16a: without accelerometer data the
+    // app cannot tell awake from asleep, which could buzz an awake user). From now on a
     // fire is logged as "wouldcue" and never played. The cue logic itself is unchanged.
     function suppressCues() as Void {
         mSuppressed = true;

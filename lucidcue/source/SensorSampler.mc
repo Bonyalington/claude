@@ -65,9 +65,10 @@ class SensorSampler {
                 });
                 mListening = true;
             } catch (ex) {
-                // No accelerometer / interval data: epochs then have motion 0 and the
-                // HR-std fallback for variability. hasAccel() stays false, so
-                // NightController turns buzzing off at the 60 s caps check (R16a).
+                // No accelerometer / interval data: epochs then have motion =
+                // stillThreshold (lcSampledEpoch) and the HR-std fallback for
+                // variability. hasAccel() stays false, so NightController also turns
+                // buzzing off at the 60 s caps check (R16a).
                 mListening = false;
             }
         }
@@ -133,8 +134,10 @@ class SensorSampler {
     }
 
     // Every 30 s: build the epoch from the buffers, clear them, hand the epoch on.
+    // An epoch without accelerometer samples gets motion = stillThreshold (see
+    // lcSampledEpoch), so a mid-night accelerometer dropout never reads as "still".
     function onTimer() as Void {
-        var e = EpochFeatures.build(Time.now().value(), mXs, mYs, mZs, mHr, mIntervals, mCfg);
+        var e = $.lcSampledEpoch(Time.now().value(), mXs, mYs, mZs, mHr, mIntervals, mCfg);
         clearBuffers();
         mOnEpoch.invoke(e);
     }
@@ -146,4 +149,22 @@ class SensorSampler {
         mHr = [] as Array<Number or Null>;
         mIntervals = [] as Array<Number>;
     }
+}
+
+// Builds one epoch from the sampler's buffers (pure, so it can be unit-tested).
+// Accelerometer dropout rule: if any accelerometer axis has no samples this epoch (the
+// listener stopped delivering mid-night), motionScore would return 0, which reads as
+// perfectly still and lets REM-like and onset progress build up on no data. Such an
+// epoch instead gets motion = cfg.stillThreshold: "not still" (still means motion <
+// stillThreshold) but far below wakeMotionThreshold, so it breaks the still / onset runs
+// and cannot be REM-like, without counting toward a wake. HR fields are unchanged.
+// This is a sampler rule, not part of the Python model (which never sees empty buffers).
+function lcSampledEpoch(t as Number, xs as Array<Number>, ys as Array<Number>,
+        zs as Array<Number>, hr as Array<Number or Null>, intervals as Array<Number>,
+        cfg as LcConfig) as Epoch {
+    var e = EpochFeatures.build(t, xs, ys, zs, hr, intervals, cfg);
+    if (xs.size() == 0 || ys.size() == 0 || zs.size() == 0) {
+        e.motion = cfg.stillThreshold;
+    }
+    return e;
 }
