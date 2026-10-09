@@ -30,4 +30,11 @@ module LcTestUtil {
         Test.assert(actual != null);
         Test.assertEqual(actual as Number, expected);
     }
+
+    // Asserts a nullable String is non-null and has the same characters as expected.
+    // String.equals compares contents; == on Strings would compare references.
+    function assertStr(actual as String or Null, expected as String) as Void {
+        Test.assert(actual != null);
+        Test.assert((actual as String).equals(expected));
+    }
 }
