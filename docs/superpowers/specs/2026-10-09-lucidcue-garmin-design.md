@@ -55,6 +55,9 @@ the authoring environment:
 ### 3.1 Train (bedtime, ~5 min)
 
 1. User opens LucidCue → **Train**.
+Main menu: Train, Start Night, Buzz test (plays levels 10/30/50/80 to check
+whether intensity is honoured).
+
 2. The watch plays the signature cue `trainReps` times (default 5), ~30 s apart.
 3. At each cue the user does a reality check (look at hands, or pinch nose
    and try to breathe) and thinks: *"When I feel this, I'm dreaming."*
@@ -64,7 +67,8 @@ the authoring environment:
 
 Runs sensing → sleep state → REM detection → cue control → logging
 (Section 4). Pressing a button shows a dim status screen: elapsed time,
-state, cues fired. A long press of Back ends the night and opens Morning.
+state, cues fired. Back is ignored in Night mode. Pressing START again while the
+status screen is up asks "End night?", and Yes opens Morning.
 
 ### 3.3 Morning check-in (~20 s)
 
@@ -181,6 +185,7 @@ copies it off over USB.
 | `trainReps` | 5 | 3–10 |
 | `hrRise` | 0.05 | 0.00–0.20 |
 | `varRatio` | 1.3 | 1.0–2.0 |
+| `vibeByLength` | false | bool (ramp by pulse length when intensity is not honoured) |
 
 ## 6. Calibration script (desktop, Python)
 
@@ -212,8 +217,10 @@ lucidcue/
     NightLog.mc
     views/ TrainView.mc NightView.mc MorningView.mc SummaryView.mc
   test/                   # (:test) unit tests run in simulator
+model/                    # Python reference model of the pure logic (pytest); used by tools
 tools/
   calibrate.py
+  gen_fixtures.py         # writes Monkey C replay fixtures from the Python model
 docs/
   SETUP.md                # SDK install, dev key, build, sideload, log retrieval
 ```
