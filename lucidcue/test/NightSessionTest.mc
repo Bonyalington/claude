@@ -196,9 +196,9 @@ function testNightStartLoggedWithSettings(logger as Test.Logger) as Boolean {
     logger.debug(first);
     Test.assert(NsFix.startsWith(first, "X,"));
     Test.assert(NsFix.hasSub(first, ",night_start,"));
-    Test.assert(NsFix.hasSub(first, "hrRise=0.05"));
+    Test.assert(NsFix.hasSub(first, "hrRise=0.050;"));
     LcTestUtil.assertStr(first, "X,1760000000,night_start,v1;noiseFloorMg=30;stillThreshold=500;"
-        + "wakeMotionThreshold=5000;hrRise=0.05;varRatio=1.30;earliestCueHours=4.5;"
+        + "wakeMotionThreshold=5000;hrRise=0.050;varRatio=1.300;earliestCueHours=4.50;"
         + "maxCuesPerNight=6;startLevel=30;levelStep=15;levelMax=80;levelMin=10;trainReps=5;"
         + "calibrationMode=true;vibeByLength=false;");
     Test.assertEqual(NightLogFix.fieldCount(first), 4);

@@ -169,15 +169,16 @@ function lcBool(b as Boolean) as String {
 }
 
 // night_start detail: "v1;" then "k=v;" for every LcConfig field (Python Config order).
-// No commas (the X line has exactly 4 fields).
+// No commas (the X line has exactly 4 fields). Decimals are wide enough to reproduce any
+// user input: hrRise / varRatio at 3 places (default "hrRise=0.050"), earliestCueHours at 2.
 function lcSettingsDetail(c as LcConfig) as String {
     return "v1;"
         + "noiseFloorMg=" + c.noiseFloorMg + ";"
         + "stillThreshold=" + c.stillThreshold + ";"
         + "wakeMotionThreshold=" + c.wakeMotionThreshold + ";"
-        + "hrRise=" + c.hrRise.format("%.2f") + ";"
-        + "varRatio=" + c.varRatio.format("%.2f") + ";"
-        + "earliestCueHours=" + c.earliestCueHours.format("%.1f") + ";"
+        + "hrRise=" + c.hrRise.format("%.3f") + ";"
+        + "varRatio=" + c.varRatio.format("%.3f") + ";"
+        + "earliestCueHours=" + c.earliestCueHours.format("%.2f") + ";"
         + "maxCuesPerNight=" + c.maxCuesPerNight + ";"
         + "startLevel=" + c.startLevel + ";"
         + "levelStep=" + c.levelStep + ";"

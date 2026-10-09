@@ -271,7 +271,8 @@ otherwise B.
 
 **Always confirm that a change took effect.** At the start of every night the
 app writes the settings it is actually using into `LUCIDCUE.TXT`, as `k=v`
-pairs on the `night_start` line (e.g. `…,night_start,…hrRise=0.07…`). After
+pairs on the `night_start` line (e.g. `…,night_start,…hrRise=0.070…`; `hrRise`
+and `varRatio` show 3 decimals, `earliestCueHours` 2). After
 changing a setting, start a short night (or check the next morning's log) and
 make sure the line shows your new values. If it shows the old ones, a saved
 `LUCIDCUE.SET` is overriding them (see B).
