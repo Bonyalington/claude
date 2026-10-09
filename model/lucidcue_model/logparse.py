@@ -85,15 +85,24 @@ def parse_log(text: str) -> list[Night]:
 
 
 def _gmt_to_unix(s: str) -> int:
-    """'2026-10-10T03:15:00.0' (or without fraction) as UTC -> Unix seconds."""
+    """'2026-10-10T03:15:00.0' as UTC -> Unix seconds. The fraction is optional, and a
+    trailing 'Z' or '+00:00' is accepted."""
+    s = s.strip()
+    if s.endswith("Z"):
+        s = s[:-1]
+    elif s.endswith("+00:00"):
+        s = s[:-6]
     base = s.split(".")[0]
     return calendar.timegm(time.strptime(base, "%Y-%m-%dT%H:%M:%S"))
 
 
 def load_garmin_stages(obj: dict) -> list[tuple[int, int, str]]:
-    """Return [(start_unix, end_unix, stage)] from obj['sleepLevels']."""
+    """Return [(start_unix, end_unix, stage)] from obj['sleepLevels'].
+
+    A missing or null sleepLevels (Garmin has no stages for that night) gives [].
+    """
     stages = []
-    for lv in obj["sleepLevels"]:
+    for lv in obj.get("sleepLevels") or []:
         stage = STAGE_MAP.get(int(lv["activityLevel"]))
         if stage is None:
             continue

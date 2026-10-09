@@ -90,3 +90,17 @@ def test_gmt_without_fraction():
                             "activityLevel": 2}]}
     (s,) = load_garmin_stages(obj)
     assert s == (1_791_602_100, 1_791_603_900, "rem")
+
+
+def test_missing_or_null_sleep_levels_gives_no_stages():
+    assert load_garmin_stages({}) == []
+    assert load_garmin_stages({"sleepLevels": None}) == []
+    assert load_garmin_stages({"sleepLevels": []}) == []
+
+
+def test_gmt_with_z_or_utc_offset():
+    for start, end in [("2026-10-10T03:15:00Z", "2026-10-10T03:45:00.0Z"),
+                       ("2026-10-10T03:15:00+00:00", "2026-10-10T03:45:00.000+00:00")]:
+        obj = {"sleepLevels": [{"startGMT": start, "endGMT": end, "activityLevel": 2}]}
+        (s,) = load_garmin_stages(obj)
+        assert s == (1_791_602_100, 1_791_603_900, "rem")
