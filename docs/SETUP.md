@@ -130,6 +130,57 @@ On success the compiler prints `BUILD SUCCESSFUL` (or similar) and creates
 `bin/LucidCue.prg`. A warning that the launcher icon is "not the expected
 size" and will be scaled is harmless.
 
+### 4.1 If the build or tests fail
+
+The app was written without access to the Connect IQ compiler, so a few API
+details are educated guesses. If the build, the tests (§5) or the simulator
+walk-through fail, find the symptom below. Each row names the file to change
+and the most likely fix. The code expects Gradual type checking, the
+default. If your setup uses a stricter level, add `-l 1` to the `monkeyc`
+commands. File paths are relative to `lucidcue/`, except `tools/…`. Note
+every fix you make in "Device findings".
+
+**Build errors**
+
+| Symptom | File | Likely fix |
+|---|---|---|
+| Syntax or type error on `getInitialView() as [Views] or [Views, InputDelegates]` | `source/LucidCueApp.mc` | The tuple return type needs SDK 7 or newer: update the SDK (§1). On an older SDK, use `as Array<Views or InputDelegates>?` and cast the return value to that type. |
+| `Application.PropertyValueType` not found | `source/LcConfig.mc` (`lcReadProperty`) | Change the return type to `Lang.Object or Null`. |
+| Resource compiler rejects decimal `min` / `max` (`0.0`/`0.2`, `2.0`/`7.0`, `1.0`/`2.0`) | `resources/settings.xml` | Delete `min` and `max` on the float settings. `clampConfig` still enforces the ranges. |
+| `STATE_AWAKE` / `STATE_SETTLING` / `STATE_ASLEEP` not typed as `Number` | `source/SleepStateMachine.mc` (anonymous `enum`) | Add `as Number` where the error points, or replace the enum with three `const`s (0, 1, 2). |
+| "may be null" error inside an `if (a != null && …)` compound condition | the file and line named (`SleepStateMachine.mc`, `RemDetector.mc`, `CueController.mc`) | The checker didn't narrow the type. Copy the value into a local, or cast it at the use: `(hr as Double) < (refHr as Double)`. |
+| "Undefined symbol" for a global (`Epoch`, `STATE_ASLEEP`, `LcConfig`) used inside a `module` | `source/EpochFeatures.mc`, the test modules in `test/` | Qualify it with `$.`, e.g. `new $.Epoch(...)`, `as $.LcConfig`. |
+| Type error on the options dictionary passed to `Sensor.registerSensorDataListener` | `source/SensorSampler.mc` (`start`) | Put the nested `{ :period => 1, :accelerometer => {…}, :heartBeatIntervals => {…} }` literal in an untyped local (`var opts = {…};`) and pass `opts`, or cast it with `as Sensor.SensorDataListenerOptions` if the SDK names that type. |
+| Errors on `mLog.write(...)` / `mVibe.play(...)` | `source/NightSession.mc` | These members are duck-typed and need Gradual checking (`-l 1`). Don't build with `-l 2`/`-l 3`. Otherwise, type them as `NightLog` / `Vibe` and make the test fakes `FakeLog extends NightLog` / `FakeVibe extends Vibe`. |
+| Error on `new Vibe(true).profiles(50)` | `test/NightSessionTest.mc` | Split the chained call: `var v = new Vibe(true); var p = v.profiles(50);`. |
+| "Redefinition of variable `k`" | `source/views/LcDraw.mc` (`lcDrawLines`, two `for (var k …)` loops) | Rename the second loop's variable to `j`. |
+| `Graphics.ColorType` not found | `source/views/LcDraw.mc` | Change the `color` parameter type to `Number`. |
+| Error (not a warning) about the launcher icon size (the PNG is 40×40) | `resources/launcher_icon.png` | Re-save the PNG at the size the message names. The scaling warning on its own is harmless. |
+| Signature error on `onTap` | `source/views/NightView.mc` (`NightDelegate`) | Match the SDK's `onTap(clickEvent as WatchUi.ClickEvent) as Boolean`. |
+| Unknown product / device id | `manifest.xml` | Use the ids SDK Manager shows (§0). |
+
+**Unit test failures (§5)**
+
+| Symptom | File | Likely fix |
+|---|---|---|
+| Helper functions such as `LcTestUtil.near` or `NsFix.feed` are run as tests and fail | the `(:test) module`s in `test/` | The runner treats functions inside `(:test)` modules as tests. Move the helpers into a class inside the module (only functions are run as tests) and call them through it. |
+| Out of memory, or "Watchdog Tripped" before any replay test has run | `test/Fixtures.mc` (about 7,700 literals that initialise at load) | Change `tools/gen_fixtures.py` to return each array from a function (`Fixtures.hr()` and so on), and update `test/ReplayTest.mc` to match. |
+| `testReplay00`, `testReplay01`, … fail with "Watchdog Tripped" / "Code Executed Too Long" | `tools/gen_fixtures.py` (`CHUNK`) | Halve `CHUNK`, regenerate `lucidcue/test/Fixtures.mc` (§5), rebuild. The Python tests follow the new value. |
+| `testReplay01` and later fail with "… the testReplayNN chunks must run in order" | `test/ReplayTest.mc` | The runner reorders tests, or resets module state between them. Run the full suite, not a filtered test. If it still fails, the replay needs a per-chunk state checkpoint (a code change). Record it. |
+| `testLoadConfigReadsAndClampsProperties` errors on `Properties.setValue` | `test/LcConfigTest.mc` | Properties aren't writable in test mode. Delete that one test (the clamp and default tests cover the logic), then reset the simulator's app data. |
+| `testSqrtReturnsDouble` fails | `source/EpochFeatures.mc` | `Math.sqrt` returns a 32-bit Float. Motion and HR maths then differ slightly from the Python model. Record it. The fix is a Double square root (Newton refinement), which is a code change. |
+| Exact-string tests fail by one digit in the last decimal | `test/NightLogTest.mc`, `test/NightSessionTest.mc` | `Double.format` rounds differently from C `printf`. Record it. Only the expected strings need to change. |
+
+**Simulator walk-through and device behaviour**
+
+| Symptom | File | Likely fix |
+|---|---|---|
+| A morning question is skipped, or the Summary never appears, after a Confirmation | `source/views/NightView.mc` (`NAV_DELAY_MS`), `source/views/MorningFlow.mc` (`STEP_DELAY_MS`) | The Confirmation pops later than expected. Raise both from 100 to 300 ms. |
+| A Settings toggle saves the opposite of what it shows | `source/views/MainMenu.mc` (`SettingsMenuDelegate.onSelect`) | `ToggleMenuItem.isEnabled()` returns the old state in `onSelect` on your firmware. Store `!isEnabled()` instead. |
+| Back on a morning question records "No" and moves on | `source/views/MorningFlow.mc` | Expected: Back on a Confirmation means No. If Back instead just closes the question, START re-asks it. Both are fine. |
+| A screen tap on the Night screen shows the status or does anything else | `source/views/NightView.mc` (`NightDelegate.onTap`) | The tap reached a different handler. Record it. START is the only intended control. |
+| `E` lines with motion exactly `500` (the still threshold) in the middle of a night | `source/SensorSampler.mc` (`lcSampledEpoch`) | By design: the accelerometer delivered no samples in that epoch. The epoch then counts as "not still", so it is never REM-like and doesn't count toward sleep onset (a motion of 0 would have looked perfectly still). Note in "Device findings" how often it happens. Long runs mean the accelerometer stops with the display off. |
+
 ## 5. Run the unit tests (in the simulator)
 
 Build the test version, start the simulator, then run the tests in it:
@@ -369,8 +420,8 @@ logs are your personal health data: don't commit them.
    ```sh
    .venv/bin/python tools/calibrate.py logs/LUCIDCUE_2026-10-10.TXT sleep_2026-10-10.json --out calib/
    ```
-   Its `night 1` line reads `N epochs over H h = R per hour (expect about
-   120), G gap(s)`. Check that N is about 120 × the hours you were in bed, R
+   Ignore its threshold lines for now (one night is too few). Its `night 1`
+   line reads `N epochs over H h = R per hour (expect about 120), G gap(s)`. Check that N is about 120 × the hours you were in bed, R
    is close to 120, G is 0, and the next line says `ends with
    night_end/morning`. If any check fails, the log was cut short or the app
    was paused during the night. Record it in "Device findings" (§9): the
@@ -504,5 +555,6 @@ _Fill in after the checklist above: watch size and device id, firmware
 version, Buzz test result, Sleep Mode result, `hbi` and `acc` values, log
 survival (probe run and night 1: epochs per hour, gaps, does the log end with
 `night_end`/`morning`; if not, note the spec §2 `Application.Storage`
-fallback is needed), battery drop per night, calibrated `hrRise` /
-`varRatio`, and any build fixes from §4.1._
+fallback is needed), how often mid-night `E` lines show motion `500`
+(accelerometer dropouts, §4.1), battery drop per night, calibrated `hrRise` /
+`varRatio`, and any build or test fixes from §4.1._
