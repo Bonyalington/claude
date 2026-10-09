@@ -11,6 +11,9 @@ class NightSummary {
     var wakesAfterCue as Number = 0;
     var batteryStart as Float = 0.0;
     var batteryEnd as Float = 0.0;
+    // True when cues were only logged, never played: calibration mode, or cues
+    // suppressed for a missing accelerometer (suppressCues). Summary then says "Would-cues".
+    var calibration as Boolean = false;
 
     function initialize() {
         cues = [] as Array<Array<Number>>;
@@ -18,7 +21,8 @@ class NightSummary {
 }
 
 // One night: steps each epoch through sleep state -> REM -> cue (as night.py run_night),
-// buzzes (live mode) or only logs "wouldcue" (calibration mode), and writes the log.
+// buzzes (live mode) or only logs "wouldcue" (calibration mode, or after suppressCues()),
+// and writes the log.
 //
 // log and vibe are duck-typed so tests can pass fakes: log needs write(line as String),
 // vibe needs play(level as Number). The real caller passes a NightLog and a Vibe.
@@ -34,6 +38,8 @@ class NightSession {
     var mBatteryStart as Float;
     var mLoggedOnsetT as Number or Null = null;   // onset time last written as an X line
     var mStopped as Boolean = false;
+    var mSuppressed as Boolean = false;           // suppressCues(): fires log "wouldcue" only
+    var mSummary as NightSummary or Null = null;  // cached by the first stop()
 
     function initialize(cfg as LcConfig, log, vibe, startT as Number, battery as Float) {
         mCfg = cfg;
@@ -64,7 +70,7 @@ class NightSession {
         var level = 0;
         if (mCue.fire()) {
             level = mCue.level();
-            if (mCfg.calibrationMode) {
+            if (mCfg.calibrationMode || mSuppressed) {
                 cueEvent = "wouldcue";
             } else {
                 mVibe.play(level);
@@ -100,8 +106,29 @@ class NightSession {
             + "\nCues: " + mCue.cuesTonight();
     }
 
+    // No-vibrate mode for the rest of the night (R16a: no accelerometer data means
+    // motion reads as perfectly still, which could buzz an awake user). From now on a
+    // fire is logged as "wouldcue" and never played. The cue logic itself is unchanged.
+    function suppressCues() as Void {
+        mSuppressed = true;
+    }
+
+    function cuesSuppressed() as Boolean {
+        return mSuppressed;
+    }
+
+    // Sensor capabilities, as X,<t>,caps,hbi=<0|1>;acc=<0|1>.
+    function logCaps(t as Number, hbi as Boolean, acc as Boolean) as Void {
+        logEvent(t, "caps", "hbi=" + $.lcBit(hbi) + ";acc=" + $.lcBit(acc));
+    }
+
     // Ends the night: logs the end battery and night_end, and returns the summary.
+    // Idempotent: a second call returns the first call's summary and writes nothing.
     function stop(endT as Number, battery as Float) as NightSummary {
+        var done = mSummary;
+        if (done != null) {
+            return done;
+        }
         mStopped = true;
         logEvent(endT, "battery", battery.format("%.1f"));
         logEvent(endT, "night_end", "cues=" + mCue.cuesTonight() + ";wakes=" + mCue.wakesAfterCue());
@@ -113,6 +140,8 @@ class NightSession {
         s.wakesAfterCue = mCue.wakesAfterCue();
         s.batteryStart = mBatteryStart;
         s.batteryEnd = battery;
+        s.calibration = mCfg.calibrationMode || mSuppressed;
+        mSummary = s;
         return s;
     }
 
@@ -163,7 +192,7 @@ function lcClock(t as Number) as String {
 
 // Summary screen lines:
 //   "Slept HH:MM" | "No sleep detected"
-//   "Cues: N (W woke you)" | "No cues"
+//   "Cues: N (W woke you)" | "Would-cues: N" (calibration) | "No cues"
 //   "HH:MM L<level>" per cue
 //   "Battery -X.X%"
 function summaryLines(s as NightSummary) as Array<String> {
@@ -177,6 +206,8 @@ function summaryLines(s as NightSummary) as Array<String> {
     var n = s.cues.size();
     if (n == 0) {
         out.add("No cues");
+    } else if (s.calibration) {
+        out.add("Would-cues: " + n);
     } else {
         out.add("Cues: " + n + " (" + s.wakesAfterCue + " woke you)");
     }

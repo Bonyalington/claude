@@ -158,6 +158,46 @@ The `testLoadConfig…` test writes settings into the simulator's app storage
 and then restores the defaults. If it ever fails partway, reset the
 simulator's app data (*File → Reset All App Data*, or similar).
 
+### Simulator walk-through (after the tests pass)
+
+Build the normal app (§4), then run it in the simulator:
+
+```sh
+monkeydo bin/LucidCue.prg epix2pro47mm
+```
+
+In the simulator, START is the *Enter* / select button (or click the top-right
+button on the watch picture) and Back is *Esc* / the lower-right button. The
+names may differ by SDK version. Simulated heart rate and accelerometer data
+come from the simulator's *Simulation → Sensor* menu (or similar); without
+it, a night still runs but logs empty heart rate.
+
+- [ ] The app opens on a menu with **Train**, **Start Night**, **Buzz test**
+      and **Settings**.
+- [ ] **Train** buzzes at once and shows "Look at your hands", "Am I
+      dreaming?" and "1 / 5". About every 30 s it buzzes again and the count
+      goes up. After the last one it shows "Start Night →". START opens the
+      black Night screen.
+- [ ] **Start Night** (from the menu) shows a black screen. Back does
+      nothing.
+- [ ] On the Night screen, START shows dim grey status text (elapsed time,
+      state, cues) that disappears after about 5 s.
+- [ ] START while the status text is up asks **End night?**. *No* returns to
+      the black screen. *Yes* asks "Remember a dream?", "Felt the cue in a
+      dream?" and "Became lucid?" in turn, then shows the summary.
+- [ ] Back on the summary returns to the menu.
+- [ ] **Buzz test** shows "Level 10", "Level 30", "Level 50", "Level 80",
+      about 3 s apart, then "Buzz test done".
+- [ ] **Settings** shows **Calibration mode** (on) and **Buzz by length**
+      (off). Toggle one, go back, open Settings again: it kept the new value.
+      Set it back.
+- [ ] The simulator's console (or the log) shows the `X,…,night_start,…`,
+      `X,…,caps,hbi=…;acc=…` (after 60 s), `E,…`, `X,…,battery,…`,
+      `X,…,night_end,…` and `X,…,morning,…` lines.
+- [ ] If the night ran over 60 s **without** simulated accelerometer data, the
+      caps line says `acc=0` and the status text adds "No motion sensor:
+      buzzing off".
+
 ## 6. Sideload the app onto the watch (USB)
 
 1. Connect the watch to the computer with its USB cable.
@@ -195,9 +235,16 @@ The settings are `calibrationMode`, `earliestCueHours`, `maxCuesPerNight`,
 `startLevel`, `trainReps`, `hrRise`, `varRatio` and `vibeByLength`. The watch
 clamps every value to its allowed range when it loads them.
 
+**`calibrationMode` and `vibeByLength` can be changed on the watch:** open
+LucidCue → **Settings** and toggle **Calibration mode** or **Buzz by length**.
+The change is saved at once and applies from the **next** Start Night (the
+app reads its settings when a night starts). This is the easiest way, and it
+is how you go live. The options below also work for these two.
+
 **Sideloaded apps often don't show up in the phone's Connect IQ app settings.**
-Garmin delivers phone settings through the Store. Use whichever option works
-for you:
+Garmin delivers phone settings through the Store. For the other settings
+(`earliestCueHours`, `maxCuesPerNight`, `startLevel`, `trainReps`, `hrRise`,
+`varRatio`), use whichever option works for you:
 
 - **A. Phone settings.** Open the Connect IQ app (or Garmin Connect) on your
   phone, find LucidCue under your watch's apps, and change the settings. Use
@@ -218,7 +265,9 @@ for you:
   `LUCIDCUE.SET` from the simulator's temporary `GARMIN/APPS/SETTINGS/` folder
   to the watch's `GARMIN/APPS/SETTINGS/`.
 
-Where this guide says "set X in settings", use A if you can, otherwise B.
+Where this guide says "set X in settings", use the watch's **Settings** menu
+for `calibrationMode` and `vibeByLength`. For the others use A if you can,
+otherwise B.
 
 **Always confirm that a change took effect.** At the start of every night the
 app writes the settings it is actually using into `LUCIDCUE.TXT`, as `k=v`
@@ -340,8 +389,9 @@ percentiles while asleep. Then:
    it. The fix is lowering the accelerometer rate to 5 Hz in code.
 4. **Look at the plots** in `calib/`. Do the REM-like flags line up with
    Garmin's REM blocks?
-5. **Go live:** set `calibrationMode = false` (§6), and confirm that the next
-   `night_start` line shows `calibrationMode=false`. From now on the watch buzzes
+5. **Go live:** on the watch, open LucidCue → **Settings** and turn
+   **Calibration mode** off (§6). Then confirm that the next `night_start`
+   line shows `calibrationMode=false`. From now on the watch buzzes
    during detected REM, no earlier than `earliestCueHours` after you fall
    asleep. Keep training every bedtime, and review your morning answers
    weekly.
@@ -359,8 +409,9 @@ the results in a "Device findings" section at the end of this file.
 - [ ] **Vibration strength:** open LucidCue → **Buzz test**. It plays strength
       10, 30, 50 and 80. Do the later buzzes feel stronger?
   - Yes: strength works. Keep `vibeByLength = false`.
-  - No difference: set **`vibeByLength = true`** (§6). The app will then
-    ramp by pulse length instead.
+  - No difference: open LucidCue → **Settings** and turn **Buzz by length**
+    on (sets `vibeByLength = true`, §6). The app will then ramp by pulse
+    length instead. Buzz test itself always varies strength, not length.
 - [ ] **Sleep Mode / Do Not Disturb:** turn on the watch's Sleep Mode (or
       DND), the way it will be at night, and run **Buzz test** again. Does it
       still vibrate?
@@ -372,7 +423,7 @@ the results in a "Device findings" section at the end of this file.
       morning questions. Copy `LUCIDCUE.TXT` to the computer and open it in
       a text editor. It should contain:
   - [ ] an `X,…,night_start,…` line
-  - [ ] an `X,…,caps,hbi=…` line
+  - [ ] an `X,…,caps,hbi=…;acc=…` line
   - [ ] at least 3 `E,…` lines (one every 30 seconds)
   - [ ] an `X,…,morning,…` line
   - [ ] an `X,…,night_end,…` line
@@ -380,6 +431,12 @@ the results in a "Device findings" section at the end of this file.
   - `hbi=1`: beat-to-beat intervals are available. Variability uses RMSSD.
   - `hbi=0`: not available on your watch or firmware. The app automatically
     falls back to heart-rate standard deviation. Note it.
+- [ ] **Accelerometer data:** in the same line, is it `acc=1` or `acc=0`?
+  - `acc=1`: good.
+  - `acc=0`: no motion data reached the app, so it could not tell awake from
+    asleep. The app then **turns buzzing off for that night** (cues are only
+    logged as `wouldcue`), and the status text says "No motion sensor:
+    buzzing off". Record it: the app cannot cue you until this works.
 - [ ] If `LUCIDCUE.TXT` stayed empty: check the file is exactly
       `GARMIN/APPS/LOGS/LUCIDCUE.TXT`, and that the app file is exactly
       `LucidCue.prg`. Record it if it still doesn't work.
@@ -392,13 +449,13 @@ the results in a "Device findings" section at the end of this file.
 - [ ] **Run `tools/calibrate.py`** and set the reported `hrRise` /
       `varRatio` (§8). Confirm them on the next `night_start` line.
 - [ ] Note any `stillThreshold` or battery issues reported (§8).
-- [ ] **Set `calibrationMode = false`** to go live, and confirm it on the next
-      `night_start` line.
+- [ ] **Go live:** LucidCue → **Settings** → turn **Calibration mode** off,
+      and confirm `calibrationMode=false` on the next `night_start` line.
 
 ---
 
 ## Device findings
 
 _Fill in after the checklist above: watch size and device id, firmware
-version, Buzz test result, Sleep Mode result, `hbi` value, battery drop per
+version, Buzz test result, Sleep Mode result, `hbi` and `acc` values, battery drop per
 night, calibrated `hrRise` / `varRatio`._

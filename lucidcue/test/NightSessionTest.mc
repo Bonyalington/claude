@@ -237,6 +237,7 @@ function testSummaryLinesWithCues(logger as Test.Logger) as Boolean {
     LcTestUtil.assertNum(summary.onsetT, NsFix.T0 + 600);
     Test.assertEqual(summary.cues.size(), 3);
     Test.assertEqual(summary.wakesAfterCue, 0);
+    Test.assertEqual(summary.calibration, false);
     // Clock strings are device-local: assert shapes, not exact times.
     var lines = summaryLines(summary);
     for (var k = 0; k < lines.size(); k++) {
@@ -309,5 +310,106 @@ function testVibeLengthSteps(logger as Test.Logger) as Boolean {
     Test.assertEqual(v.profiles(59)[0].length, 250);
     Test.assertEqual(v.profiles(60)[0].length, 400);
     Test.assertEqual(v.profiles(80)[0].dutyCycle, 100);
+    return true;
+}
+
+// R16a: with cues suppressed (no accelerometer) a live night only logs would-cues.
+(:test)
+function testSuppressCuesNeverVibrates(logger as Test.Logger) as Boolean {
+    var log = new NsFix.FakeLog();
+    var vibe = new NsFix.FakeVibe();
+    var s = new NightSession(NsFix.cfg(false), log, vibe, NsFix.T0, 90.0);
+    s.suppressCues();
+    Test.assert(s.cuesSuppressed());
+    NsFix.runNight(s);
+    Test.assertEqual(vibe.levels.size(), 0);
+    Test.assertEqual(NsFix.countSub(log.lines, ",wouldcue,"), 3);
+    Test.assertEqual(NsFix.countSub(log.lines, ",cue,"), 0);
+    // Same lines as a calibration night: suppression adds no log lines of its own.
+    Test.assertEqual(log.lines.size(), 2 + NsFix.EPOCHS + 1 + 3);
+    var summary = s.stop(NsFix.T0 + 30 * NsFix.EPOCHS, 88.0);
+    Test.assertEqual(summary.calibration, true);
+    return true;
+}
+
+// Suppressing mid-night: the cue already played stays a cue, later fires are would-cues.
+// Fires are at epochs 115, 119 and 123; suppression happens after epoch 116.
+(:test)
+function testSuppressCuesMidNight(logger as Test.Logger) as Boolean {
+    var log = new NsFix.FakeLog();
+    var vibe = new NsFix.FakeVibe();
+    var s = new NightSession(NsFix.cfg(false), log, vibe, NsFix.T0, 90.0);
+    var i = 0;
+    i = NsFix.feed(s, i, 20, 2000, 66.0d, 20.0d);
+    i = NsFix.feed(s, i, 30, 100, 55.0d, 20.0d);
+    i = NsFix.feed(s, i, 60, 100, 55.0d, 20.0d);
+    i = NsFix.feed(s, i, 7, 100, 59.0d, 20.0d);    // epochs 110..116: first fire at 115
+    Test.assertEqual(vibe.levels.size(), 1);
+    s.suppressCues();
+    i = NsFix.feed(s, i, 13, 100, 59.0d, 20.0d);   // epochs 117..129
+    Test.assertEqual(i, NsFix.EPOCHS);
+    Test.assertEqual(vibe.levels.size(), 1);
+    Test.assertEqual(vibe.levels[0], 30);
+    Test.assertEqual(NsFix.countSub(log.lines, ",cue,"), 1);
+    Test.assertEqual(NsFix.countSub(log.lines, ",wouldcue,"), 2);
+    // The controller still ramps: the would-cues carry levels 45 and 60.
+    Test.assert(NsFix.hasSub(NsFix.lineWithPrefix(log.lines, "E,1760003570,"), ",wouldcue,45"));
+    Test.assert(NsFix.hasSub(NsFix.lineWithPrefix(log.lines, "E,1760003690,"), ",wouldcue,60"));
+    return true;
+}
+
+// R16b: a second stop() returns the same summary and writes nothing new.
+(:test)
+function testSecondStopWritesNothing(logger as Test.Logger) as Boolean {
+    var log = new NsFix.FakeLog();
+    var s = new NightSession(NsFix.cfg(false), log, new NsFix.FakeVibe(), NsFix.T0, 90.0);
+    NsFix.feed(s, 0, 10, 2000, 66.0d, 20.0d);
+    var first = s.stop(NsFix.T0 + 300, 89.5);
+    var n = log.lines.size();
+    var second = s.stop(NsFix.T0 + 400, 80.0);
+    Test.assertEqual(log.lines.size(), n);
+    Test.assert(first == second);
+    Test.assertEqual(second.endT, NsFix.T0 + 300);
+    Test.assertEqual(NsFix.countSub(log.lines, ",night_end,"), 1);
+    Test.assertEqual(NsFix.countSub(log.lines, ",battery,"), 2);
+    // Epochs arriving after stop() are ignored too.
+    NsFix.feed(s, 10, 2, 2000, 66.0d, 20.0d);
+    Test.assertEqual(log.lines.size(), n);
+    return true;
+}
+
+// R16a: the caps line, X,<t>,caps,hbi=<0|1>;acc=<0|1> (4 fields, no extra commas).
+(:test)
+function testLogCaps(logger as Test.Logger) as Boolean {
+    var log = new NsFix.FakeLog();
+    var s = new NightSession(new LcConfig(), log, new NsFix.FakeVibe(), NsFix.T0, 90.0);
+    s.logCaps(NsFix.T0 + 60, true, false);
+    var line = log.lines[log.lines.size() - 1];
+    LcTestUtil.assertStr(line, "X,1760000060,caps,hbi=1;acc=0");
+    Test.assertEqual(NightLogFix.fieldCount(line), 4);
+    s.logCaps(NsFix.T0 + 61, false, true);
+    LcTestUtil.assertStr(log.lines[log.lines.size() - 1], "X,1760000061,caps,hbi=0;acc=1");
+    return true;
+}
+
+// Calibration nights label cues as would-cues and never say "woke you".
+(:test)
+function testSummaryLinesCalibration(logger as Test.Logger) as Boolean {
+    var log = new NsFix.FakeLog();
+    var s = new NightSession(NsFix.cfg(true), log, new NsFix.FakeVibe(), NsFix.T0, 90.0);
+    NsFix.runNight(s);
+    var summary = s.stop(NsFix.T0 + 30 * NsFix.EPOCHS, 88.0);
+    Test.assertEqual(summary.calibration, true);
+    var lines = summaryLines(summary);
+    for (var k = 0; k < lines.size(); k++) {
+        logger.debug(lines[k]);
+    }
+    Test.assertEqual(lines.size(), 6);
+    Test.assert(NsFix.startsWith(lines[0], "Slept "));
+    LcTestUtil.assertStr(lines[1], "Would-cues: 3");
+    Test.assertEqual(NsFix.countSub(lines, "woke you"), 0);
+    Test.assert(NsFix.hasSub(lines[2], " L30"));
+    Test.assert(NsFix.hasSub(lines[4], " L60"));
+    LcTestUtil.assertStr(lines[5], "Battery -2.0%");
     return true;
 }

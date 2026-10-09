@@ -52,7 +52,7 @@ the authoring environment:
 
 ## 3. User flow
 
-Main menu: **Train**, **Start Night**, **Buzz test**. Buzz test plays levels
+Main menu: **Train**, **Start Night**, **Buzz test**, **Settings**. Buzz test plays levels
 10/30/50/80 so the user can check whether intensity is honoured.
 
 ### 3.1 Train (bedtime, ~5 min)
@@ -186,6 +186,8 @@ copies it off over USB.
 | `hrRise` | 0.05 | 0.00–0.20 |
 | `varRatio` | 1.3 | 1.0–2.0 |
 | `vibeByLength` | false | bool (ramp by pulse length when intensity is not honoured) |
+
+`calibrationMode` and `vibeByLength` are also on the watch (main menu → Settings), since phone settings may not appear for a sideloaded app; a change applies from the next night.
 
 ## 6. Calibration script (desktop, Python)
 

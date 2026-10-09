@@ -19,6 +19,8 @@ class SensorSampler {
     var mHr as Array<Number or Null>;
     var mIntervals as Array<Number>;
     var mHasBeatIntervals as Boolean = false;
+    var mHasAccel as Boolean = false;
+    var mStarted as Boolean = false;
     var mListening as Boolean = false;
     var mTimer as Timer.Timer or Null = null;
 
@@ -37,7 +39,17 @@ class SensorSampler {
         return mHasBeatIntervals;
     }
 
+    // True once any non-empty accelerometer array has arrived.
+    function hasAccel() as Boolean {
+        return mHasAccel;
+    }
+
+    // Idempotent: a second start() while running does nothing.
     function start() as Void {
+        if (mStarted) {
+            return;
+        }
+        mStarted = true;
         clearBuffers();
         if (Sensor has :registerSensorDataListener) {
             try {
@@ -54,7 +66,8 @@ class SensorSampler {
                 mListening = true;
             } catch (ex) {
                 // No accelerometer / interval data: epochs then have motion 0 and the
-                // HR-std fallback for variability. The night still runs on HR.
+                // HR-std fallback for variability. hasAccel() stays false, so
+                // NightController turns buzzing off at the 60 s caps check (R16a).
                 mListening = false;
             }
         }
@@ -70,6 +83,7 @@ class SensorSampler {
     }
 
     function stop() as Void {
+        mStarted = false;
         var timer = mTimer;
         if (timer != null) {
             timer.stop();
@@ -98,6 +112,9 @@ class SensorSampler {
                 mXs.addAll(xs);
                 mYs.addAll(ys);
                 mZs.addAll(zs);
+                if (xs.size() > 0) {
+                    mHasAccel = true;
+                }
             }
         }
         var hrd = data.heartRateData;
