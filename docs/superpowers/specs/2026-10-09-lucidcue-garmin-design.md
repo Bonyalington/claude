@@ -52,12 +52,12 @@ the authoring environment:
 
 ## 3. User flow
 
+Main menu: **Train**, **Start Night**, **Buzz test**. Buzz test plays levels
+10/30/50/80 so the user can check whether intensity is honoured.
+
 ### 3.1 Train (bedtime, ~5 min)
 
 1. User opens LucidCue → **Train**.
-Main menu: Train, Start Night, Buzz test (plays levels 10/30/50/80 to check
-whether intensity is honoured).
-
 2. The watch plays the signature cue `trainReps` times (default 5), ~30 s apart.
 3. At each cue the user does a reality check (look at hands, or pinch nose
    and try to breathe) and thinks: *"When I feel this, I'm dreaming."*
