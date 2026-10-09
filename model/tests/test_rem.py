@@ -102,6 +102,7 @@ def test_episode_starts_on_sixth_and_ends_after_two():
     # clearly elevated HR for the second episode.
     second = f.feed(6, STILL, 65.0, 20.0)
     assert all(x.rem_like for x in second)
+    assert not any(x.episode_active for x in second[:5])
     assert second[-1].episode_active is True
     assert second[-1].episode_id == 2
 
@@ -128,8 +129,6 @@ def test_var_base_mean_of_non_null_and_none_when_all_null():
 
 
 def test_baseline_window_keeps_last_120():
-    f = base_feeder(120)
-    f.feed(120, STILL, 55.0, 20.0)  # all within window anyway
     f2 = Feeder()
     f2.feed(120, STILL, 50.0, 20.0)
     f2.feed(120, STILL, 60.0, 20.0)
@@ -142,10 +141,24 @@ def test_non_still_epochs_not_in_baseline():
     assert f.feed(1, STILL, 55.0, 20.0)[0].hr_base == 55.0
 
 
-def test_episode_ends_when_state_leaves_asleep_and_resets_counters():
+def test_leaving_asleep_resets_rem_counter():
     f = base_feeder()
-    f.feed(4, STILL, 58.0, 20.0)
-    f.feed(1, STILL, 58.0, 20.0, SleepStatus(SETTLING, T0))  # resets the rem_like counter
-    r = f.feed(1, STILL, 58.0, 20.0)[0]
+    f.feed(5, STILL, 60.0, 20.0)  # rem_run = 5, one short of EPISODE_START
+    f.feed(1, STILL, 60.0, 20.0, SleepStatus(SETTLING, T0))
+    r = f.feed(1, STILL, 60.0, 20.0)[0]
     assert r.rem_like is True
+    assert r.episode_active is False  # without the reset rem_run would be 6
+
+
+def test_leaving_asleep_resets_non_rem_counter():
+    f = base_feeder()
+    assert f.feed(6, STILL, 65.0, 20.0)[-1].episode_active is True
+    assert f.feed(1, STILL, 55.0, 20.0)[0].episode_active is True  # non_rem_run = 1
+    r = f.feed(1, STILL, 65.0, 20.0, SleepStatus(AWAKE, T0))[0]
     assert r.episode_active is False
+    second = f.feed(6, STILL, 65.0, 20.0)
+    assert not any(x.episode_active for x in second[:5])
+    assert second[-1].episode_active is True
+    assert second[-1].episode_id == 2
+    # First non-REM epoch after re-entering must not end the new episode.
+    assert f.feed(1, STILL, 55.0, 20.0)[0].episode_active is True
