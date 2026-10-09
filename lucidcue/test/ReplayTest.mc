@@ -8,19 +8,31 @@ import Toybox.Test;
 //
 // The night is replayed in chunks of Fixtures.CHUNK epochs so that no single test
 // runs long enough to trip the watchdog. The generated tests testReplay00,
-// testReplay01, ... (end of Fixtures.mc) each call runChunk(logger, k); the units'
-// state carries over between them in this module's variables. The chunks must run
-// in order, as part of the full suite: a single replay test run on its own fails by
-// design (the position guard below).
+// testReplay01, ... (end of Fixtures.mc) each call runChunk(logger, k). The test
+// runner resets module state between test functions, so each chunk is independent:
+// it builds fresh units, restores them from the Python checkpoint taken before epoch
+// k * CHUNK (Fixtures.SNAP_*), and replays only its own epochs. Any replay test can
+// run on its own or in any order. model/tests/test_gen_fixtures.py proves in Python
+// that the checkpoint holds every field (a restored chunk replays identically).
+
+(:test)
+function testReplayFixtureHasCues(logger as Test.Logger) as Boolean {
+    // The night exercises the cue path (Python: two episodes of 30/45/60 ramps), and
+    // the expected per-epoch fires add up to Python's cues_tonight at the end.
+    var fires = 0;
+    for (var i = 0; i < $.Fixtures.EXP_FIRE_LEVEL.size(); i++) {
+        if (($.Fixtures.EXP_FIRE_LEVEL[i] as Number) > 0) {
+            fires += 1;
+        }
+    }
+    var ends = $.Fixtures.END_CUES;
+    Test.assert(fires > 0);
+    Test.assertEqual(ends[ends.size() - 1] as Number, fires);
+    return true;
+}
 
 (:test)
 module ReplayFix {
-    var sm as SleepStateMachine or Null = null;
-    var rd as RemDetector or Null = null;
-    var cc as CueController or Null = null;
-    var pos as Number = 0;      // next epoch index to replay; -1 after a mismatch
-    var fires as Number = 0;    // fires seen so far
-
     // Fixtures encode a null Double as -1.0d (real HR / variability values are >= 0).
     function nullable(v as Double) as Double or Null {
         if (v < 0.0d) {
@@ -29,55 +41,90 @@ module ReplayFix {
         return v;
     }
 
-    // Replays epochs [k * CHUNK, min(n, (k + 1) * CHUNK)) and checks each one.
+    // Fixtures encode a null Number as -1 (the nullable fields are Unix times and
+    // episode ids, all >= 0).
+    function nullableNum(v as Number) as Number or Null {
+        if (v < 0) {
+            return null;
+        }
+        return v;
+    }
+
+    // Replays epochs [k * CHUNK, min(n, (k + 1) * CHUNK)) from chunk k's checkpoint
+    // and checks each one.
     function runChunk(logger as Test.Logger, k as Number) as Boolean {
         var n = $.Fixtures.T.size();
         var chunk = $.Fixtures.CHUNK;
-        if (pos < 0) {
-            logger.debug("replay chunk " + k + " skipped: an earlier replay chunk failed");
+        var chunks = (n + chunk - 1) / chunk;
+        Test.assertEqual(n, 960);
+        Test.assertEqual($.Fixtures.MOTION.size(), n);
+        Test.assertEqual($.Fixtures.HR.size(), n);
+        Test.assertEqual($.Fixtures.VAR.size(), n);
+        Test.assertEqual($.Fixtures.EXP_STATE.size(), n);
+        Test.assertEqual($.Fixtures.EXP_REM.size(), n);
+        Test.assertEqual($.Fixtures.EXP_EPISODE.size(), n);
+        Test.assertEqual($.Fixtures.EXP_FIRE_LEVEL.size(), n);
+        Test.assertEqual($.Fixtures.END_CUES.size(), chunks);
+        Test.assertEqual($.Fixtures.SNAP_SM.size(), chunks);
+        Test.assertEqual($.Fixtures.SNAP_RD.size(), chunks);
+        Test.assertEqual($.Fixtures.SNAP_BASE_HR.size(), chunks);
+        Test.assertEqual($.Fixtures.SNAP_BASE_VAR.size(), chunks);
+        Test.assertEqual($.Fixtures.SNAP_CC.size(), chunks);
+        Test.assertEqual($.Fixtures.SNAP_CUE_LOG.size(), chunks);
+        if (k < 0 || k >= chunks) {
+            logger.debug("replay chunk " + k + " out of range (0.." + (chunks - 1) + ")");
             return false;
         }
-        if (pos != k * chunk) {
-            logger.debug("replay chunk " + k + " expected position " + (k * chunk)
-                + " but replay is at " + pos + ": the testReplayNN chunks must run in order,"
-                + " as part of the full test suite (a single replay test fails by design)");
-            return false;
-        }
-        if (k == 0) {
-            Test.assertEqual(n, 960);
-            Test.assertEqual($.Fixtures.MOTION.size(), n);
-            Test.assertEqual($.Fixtures.HR.size(), n);
-            Test.assertEqual($.Fixtures.VAR.size(), n);
-            Test.assertEqual($.Fixtures.EXP_STATE.size(), n);
-            Test.assertEqual($.Fixtures.EXP_REM.size(), n);
-            Test.assertEqual($.Fixtures.EXP_EPISODE.size(), n);
-            Test.assertEqual($.Fixtures.EXP_FIRE_LEVEL.size(), n);
-            // Defaults; calibrationMode (False in the generator) is not read by these units.
-            var cfg = new $.LcConfig();
-            sm = new $.SleepStateMachine(cfg);
-            rd = new $.RemDetector(cfg);
-            cc = new $.CueController(cfg);
-            fires = 0;
-        }
-        var smU = sm as SleepStateMachine;
-        var rdU = rd as RemDetector;
-        var ccU = cc as CueController;
 
-        var end = (k + 1) * chunk;
+        // Defaults; calibrationMode (False in the generator) is not read by these units.
+        var cfg = new $.LcConfig();
+        var sm = new $.SleepStateMachine(cfg);
+        var rd = new $.RemDetector(cfg);
+        var cc = new $.CueController(cfg);
+
+        // Field order: see the SNAP_* comments in Fixtures.mc.
+        var s = $.Fixtures.SNAP_SM[k] as Array<Number or Double>;
+        sm.restore(s[0] as Number, nullableNum(s[1] as Number), s[2] as Number,
+            s[3] as Double, s[4] as Number, nullable(s[5] as Double), s[6] as Number,
+            s[7] as Number, nullableNum(s[8] as Number), s[9] as Number, s[10] as Number);
+
+        var baseHr = $.Fixtures.SNAP_BASE_HR[k] as Array<Double>;
+        var varRow = $.Fixtures.SNAP_BASE_VAR[k] as Array<Double>;
+        Test.assertEqual(varRow.size(), baseHr.size());
+        var baseVar = new [varRow.size()] as Array<Double or Null>;
+        for (var j = 0; j < varRow.size(); j++) {
+            baseVar[j] = nullable(varRow[j]);
+        }
+        var r = $.Fixtures.SNAP_RD[k] as Array<Number>;
+        rd.restore(baseHr, baseVar, r[0], r[1], r[2], r[3] == 1, r[4]);
+
+        var logRow = $.Fixtures.SNAP_CUE_LOG[k] as Array<Number>;
+        var cueLog = [] as Array<Array<Number>>;
+        for (var p = 0; p < logRow.size() / 2; p++) {
+            cueLog.add([logRow[2 * p], logRow[2 * p + 1]] as Array<Number>);
+        }
+        var c = $.Fixtures.SNAP_CC[k] as Array<Number>;
+        cc.restore(c[0], c[1], nullableNum(c[2]), c[3] == 1, c[4] == 1, c[5], c[6],
+            nullableNum(c[7]), c[8], c[9], cueLog);
+        var startCues = cc.cuesTonight();
+
+        var start = k * chunk;
+        var end = start + chunk;
         if (end > n) {
             end = n;
         }
-        for (var i = pos; i < end; i++) {
+        var fires = 0;
+        for (var i = start; i < end; i++) {
             var e = new $.Epoch($.Fixtures.T[i] as Number, $.Fixtures.MOTION[i] as Number,
                 nullable($.Fixtures.HR[i] as Double), nullable($.Fixtures.VAR[i] as Double));
-            smU.step(e);
-            rdU.step(e, smU.state());
-            ccU.step(e, smU.state(), smU.onsetT(), rdU);
+            sm.step(e);
+            rd.step(e, sm.state());
+            cc.step(e, sm.state(), sm.onsetT(), rd);
 
-            var state = smU.state();
-            var rem = rdU.remLike() ? 1 : 0;
-            var episode = rdU.episodeId();
-            var fireLevel = ccU.fire() ? ccU.level() : 0;
+            var state = sm.state();
+            var rem = rd.remLike() ? 1 : 0;
+            var episode = rd.episodeId();
+            var fireLevel = cc.fire() ? cc.level() : 0;
             var expState = $.Fixtures.EXP_STATE[i] as Number;
             var expRem = $.Fixtures.EXP_REM[i] as Number;
             var expEpisode = $.Fixtures.EXP_EPISODE[i] as Number;
@@ -88,20 +135,21 @@ module ReplayFix {
                     + state + " want " + expState + ", remLike " + rem + " want " + expRem
                     + ", episodeId " + episode + " want " + expEpisode + ", fire level "
                     + fireLevel + " want " + expFireLevel);
-                pos = -1;
                 return false;
             }
             if (fireLevel > 0) {
                 fires += 1;
             }
         }
-        pos = end;
 
-        if (end == n) {
-            // The night exercises the cue path (Python: two episodes of 30/45/60 ramps),
-            // and the controller's own counter agrees with the per-epoch fires.
-            Test.assert(fires > 0);
-            Test.assertEqual(ccU.cuesTonight(), fires);
+        // The controller's own counter agrees with Python's at the chunk end and with
+        // the fires seen in this chunk.
+        var expCues = $.Fixtures.END_CUES[k] as Number;
+        if (cc.cuesTonight() != expCues || cc.cuesTonight() - startCues != fires) {
+            logger.debug("replay chunk " + k + ": cuesTonight " + cc.cuesTonight()
+                + " want " + expCues + " (" + startCues + " at chunk start, "
+                + fires + " fires in the chunk)");
+            return false;
         }
         return true;
     }
