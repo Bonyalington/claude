@@ -4,7 +4,7 @@ import Toybox.Timer;
 import Toybox.WatchUi;
 
 // Night screen: black on every update. START shows a dim (dark grey) status overlay
-// for 5 s; START while it is up asks "End night?". Back is consumed (no exit).
+// for 5 s; START while it is up asks "End night?". Back and screen taps are consumed.
 class NightView extends WatchUi.View {
     const OVERLAY_MS = 5000;
 
@@ -85,6 +85,12 @@ class NightDelegate extends WatchUi.BehaviorDelegate {
 
     // Back is ignored all night (consumed so the app does not exit).
     function onBack() as Boolean {
+        return true;
+    }
+
+    // A stray tap on the touch screen does nothing (consumed, so it is never mapped to
+    // a select behaviour). Only the START button shows the status or ends the night.
+    function onTap(evt as WatchUi.ClickEvent) as Boolean {
         return true;
     }
 
