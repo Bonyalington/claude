@@ -245,3 +245,73 @@ def test_main_log_check_only_without_sleep_files(tmp_path, capsys):
     assert "log check only" in out and "40 epochs over 0.33 h" in out
     assert "best" not in out and "NO RECOMMENDATION" not in out
 
+
+def test_main_joins_bak_and_txt_by_extension(tmp_path, capsys):
+    # One night split by the watch's 5 KB rotation: BAK has the start, TXT the rest.
+    # Given in either order, with the sleep JSON anywhere: same result as the whole log.
+    import calibrate
+    from test_logformat import _split_like_watch
+    with open(os.path.join(DATA, "sample_log.txt")) as f:
+        whole = f.read()
+    bak_text, txt_text = _split_like_watch(whole)
+    assert bak_text and txt_text
+    bak = tmp_path / "LUCIDCUE.BAK"
+    txt = tmp_path / "LUCIDCUE.TXT"
+    bak.write_text(bak_text)
+    txt.write_text(txt_text)
+    short_log = tmp_path / "short.txt"
+    _write_short_log(short_log, 40)   # a log file with a lower-case .txt name
+    rc = calibrate.main([str(txt), str(bak), "--out", str(tmp_path / "c")])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "2 log file(s), 1 night(s) in log, 0 sleep file(s) with stages" in out
+    assert "960 epochs over 8.00 h = 120.0 per hour" in out and "0 gap(s)" in out
+    assert "ends with night_end/morning" in out
+    assert "warning" not in out
+    rc = calibrate.main([str(short_log), "--out", str(tmp_path / "c2")])
+    assert rc == 0 and "40 epochs over 0.33 h" in capsys.readouterr().out
+
+
+def test_main_warns_when_bak_is_missing(tmp_path, capsys):
+    import calibrate
+    from test_logformat import _split_like_watch
+    with open(os.path.join(DATA, "sample_log.txt")) as f:
+        _, txt_text = _split_like_watch(f.read())
+    txt = tmp_path / "LUCIDCUE.TXT"
+    txt.write_text(txt_text)
+    rc = calibrate.main([str(txt), "--out", str(tmp_path / "c")])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "0 night(s) in log" in out
+    assert "does not start with a night_start line" in out
+
+
+def test_main_needs_a_log_file(tmp_path):
+    import calibrate
+    import pytest
+    sleep = tmp_path / "sleep.json"
+    sleep.write_text("{}")
+    with pytest.raises(SystemExit):
+        calibrate.main([str(sleep)])
+
+
+def test_dump_prints_readable_epochs_and_events(tmp_path, capsys):
+    import calibrate
+    log = tmp_path / "LUCIDCUE.TXT"
+    log.write_text("X,1760000000,night_start,v1;\nD,1760000000,AZJOfQAA____\n"
+                   "X,1760000030,wouldcue,level=30\nD,1760000060,H0KXgE\n"
+                   "D,1760000090,AZJ\nX,1760000090,night_end,cues=1;wakes=0\n")
+    rc = calibrate.main([str(log), "--dump"])
+    out = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert out == [
+        "# night 1 (start 1760000000)",
+        "X,1760000000,night_start,v1;",
+        "E,1760000000,100,59.0,20.00",
+        "E,1760000030,0,,",
+        "X,1760000030,wouldcue,level=30",
+        "E,1760000060,2000,66.3,20.52",
+        "# malformed, skipped: D,1760000090,AZJ",
+        "X,1760000090,night_end,cues=1;wakes=0",
+    ]
+    assert not (tmp_path / "calib").exists()

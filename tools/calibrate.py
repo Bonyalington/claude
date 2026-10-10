@@ -1,8 +1,13 @@
 """Calibration: compare the model's REM guesses with Garmin sleep stages, suggest thresholds.
 
 Usage:
-  python tools/calibrate.py LUCIDCUE.TXT sleep_2026-10-10.json [more.json ...] --out calib/
-  python tools/calibrate.py LUCIDCUE.TXT --out calib/     (log check only: no threshold search)
+  python tools/calibrate.py LUCIDCUE.BAK LUCIDCUE.TXT sleep_2026-10-10.json [more ...] --out calib/
+  python tools/calibrate.py LUCIDCUE.BAK LUCIDCUE.TXT --out calib/   (log check only)
+  python tools/calibrate.py LUCIDCUE.BAK LUCIDCUE.TXT --dump        (print decoded log)
+
+Files ending in .json (any case) are Garmin sleep files; every other file is a watch log
+(LUCIDCUE.TXT, LUCIDCUE.BAK, dated copies). Log files may come in any order and from
+several mornings: they are joined in the time order of their first line.
 
 Exit status 2 means no thresholds are recommended (see NO_RECOMMENDATION).
 """
@@ -15,7 +20,8 @@ from dataclasses import replace
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "model"))
 
 from lucidcue_model.config import EPOCH_SEC, Config  # noqa: E402
-from lucidcue_model.logparse import load_garmin_stages, parse_log  # noqa: E402
+from lucidcue_model.logparse import (decode_payload, join_logs, load_garmin_stages,  # noqa: E402
+                                     parse_log)
 from lucidcue_model.night import run_night  # noqa: E402
 from lucidcue_model.sleep_state import ASLEEP  # noqa: E402
 
@@ -146,13 +152,13 @@ def percentile(values, p):
     return s[int(round(p / 100.0 * (len(s) - 1)))]
 
 
-GAP_SEC = 45   # consecutive E lines further apart than 1.5 epochs: lines are missing
+GAP_SEC = 45   # consecutive epochs further apart than 1.5 epochs: epochs are missing
 END_EVENTS = ("night_end", "morning")
 
 
 def night_stats(night) -> dict:
     """Log-survival check for one night: epoch count, hours spanned, epochs per hour
-    (about 120 for an intact log), gaps between E lines, and whether the night's last
+    (about 120 for an intact log), gaps between epochs, and whether the night's last
     event is night_end / morning (False: the log was cut short)."""
     n = len(night.epochs)
     hours = 0.0
@@ -211,18 +217,65 @@ def plot_night(night, results, stages, path):
     plt.close(fig)
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("log")
-    ap.add_argument("sleep_json", nargs="*")
-    ap.add_argument("--out", default="calib")
-    args = ap.parse_args(argv)
+def _opt(x, fmt):
+    return "" if x is None else fmt % x
 
-    with open(args.log) as f:
-        text = f.read()
+
+def dump(text) -> None:
+    """Print the joined log in file order with each D line decoded into readable
+    E,<t>,<motion>,<hrMean>,<hrVar> lines (empty = null). Other lines are printed as they
+    are; lines before the first night_start are left out (parse_log ignores them too)."""
+    n = 0
+    for raw in text.split("\n"):
+        line = raw.strip()
+        parts = line.split(",")
+        if parts[0] == "X" and len(parts) == 4 and parts[2] == "night_start":
+            n += 1
+            print("# night %d (start %s)" % (n, parts[1]))
+        if n == 0 or not line:
+            continue
+        if parts[0] != "D":
+            print(line)
+            continue
+        epochs = None
+        if len(parts) == 3 and parts[1].isdigit():
+            epochs = decode_payload(int(parts[1]), parts[2])
+        if epochs is None:
+            print("# malformed, skipped: " + line)
+            continue
+        for e in epochs:
+            print("E,%d,%d,%s,%s" % (e.t, e.motion, _opt(e.hr_mean, "%.1f"),
+                                     _opt(e.hr_var, "%.2f")))
+
+
+def _read_text(path):
+    with open(path, encoding="utf-8-sig", errors="replace") as f:
+        return f.read()
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("files", nargs="+", metavar="FILE",
+                    help="watch logs (LUCIDCUE.TXT / LUCIDCUE.BAK, any name not ending "
+                         "in .json) and Garmin sleep files (*.json)")
+    ap.add_argument("--out", default="calib")
+    ap.add_argument("--dump", action="store_true",
+                    help="print the decoded log (E,<t>,<motion>,<hrMean>,<hrVar> and X lines) "
+                         "and exit")
+    args = ap.parse_args(argv)
+    logs = [p for p in args.files if not p.lower().endswith(".json")]
+    sleep_json = [p for p in args.files if p.lower().endswith(".json")]
+    if not logs:
+        ap.error("no log file given (LUCIDCUE.TXT / LUCIDCUE.BAK)")
+
+    text = join_logs([_read_text(p) for p in logs])
+    if args.dump:
+        dump(text)
+        return 0
     nights = parse_log(text)
     stage_sets = []
-    for p in args.sleep_json:
+    for p in sleep_json:
         with open(p) as f:
             stages = load_garmin_stages(json.load(f))
         if not stages:
@@ -233,10 +286,12 @@ def main(argv=None):
 
     cfg = Config()
     os.makedirs(args.out, exist_ok=True)
-    print("%d night(s) in log, %d sleep file(s) with stages" % (len(nights), len(stage_sets)))
+    print("%d log file(s), %d night(s) in log, %d sleep file(s) with stages"
+          % (len(logs), len(nights), len(stage_sets)))
     first = next((ln for ln in text.splitlines() if ln.strip()), "")
     if not first.startswith("X,") or ",night_start," not in first:
-        print("warning: the log does not start with a night_start line")
+        print("warning: the log does not start with a night_start line "
+              "(if the watch had a LUCIDCUE.BAK, pass it too)")
 
     asleep_motion = []
     for i, (night, stages) in enumerate(zip(nights, stages_by_night)):
@@ -275,7 +330,7 @@ def main(argv=None):
             print("best hrRise=%.2f varRatio=%.2f: precision=%.3f recall=%.3f f05=%.3f tp=%d"
                   % (hr_rise, var_ratio, best["precision"], best["recall"], best["f05"],
                      best["tp"]))
-    elif not args.sleep_json:
+    elif not sleep_json:
         print("no sleep files given: log check only, no threshold search")
     else:
         print("no nights matched a sleep file")
