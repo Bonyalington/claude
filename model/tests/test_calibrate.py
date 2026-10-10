@@ -168,10 +168,15 @@ def test_grid_search_f05_tie_prefers_higher_precision(monkeypatch):
 
 
 def _write_short_log(path, n_epochs):
-    with open(os.path.join(DATA, "sample_log.txt")) as f:
-        lines = f.read().splitlines()
-    e_lines = [ln for ln in lines if ln.startswith("E,")][:n_epochs]
-    path.write_text("\n".join([lines[0]] + e_lines) + "\n")
+    """night_start plus the first n_epochs of the sample night, as D lines."""
+    from logwriter import LogWriter
+    night, _ = _load()
+    w = LogWriter()
+    w.event(night.start_t, "night_start", "")
+    for e in night.epochs[:n_epochs]:
+        w.epoch(e)
+    w.flush()
+    path.write_text(w.text())
 
 
 def test_main_all_zero_truth_gives_no_recommendation(tmp_path, capsys):
@@ -239,3 +244,4 @@ def test_main_log_check_only_without_sleep_files(tmp_path, capsys):
     assert rc == 0
     assert "log check only" in out and "40 epochs over 0.33 h" in out
     assert "best" not in out and "NO RECOMMENDATION" not in out
+

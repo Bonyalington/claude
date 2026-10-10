@@ -1,7 +1,12 @@
 """Regenerate sample_log.txt and sample_sleep.json from scripted_night(0) + run_night.
 
-The log uses the watch's format (NightLog.mc): hrMean / hrBase at 1 decimal, hrVar /
-varBase at 2, and the night ends with night_end then morning.
+The log uses the watch's compact format (spec §4.7, NightLog.mc / NightSession.mc),
+written by the Python mirror in tests/logwriter.py: D lines of 20 epochs, X lines for
+events (wouldcue, reactions, onset, caps), and the night ends with night_end then
+morning. A truncated D line is appended last (the parser must skip it).
+
+sample_log_old.txt is a hand-kept excerpt of the old one-E-line-per-epoch format (for the
+backward-compatibility test); this script does not write it.
 
 Run from the model/ directory:  ../.venv/bin/python tests/data/make_samples.py
 """
@@ -12,18 +17,12 @@ from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", ".."))
+sys.path.insert(0, os.path.join(HERE, ".."))
 
 from lucidcue_model.config import Config  # noqa: E402
 from lucidcue_model.night import run_night  # noqa: E402
 from lucidcue_model.synth import scripted_night  # noqa: E402
-
-
-def f1(x):
-    return "" if x is None else "%.1f" % x
-
-
-def f2(x):
-    return "" if x is None else "%.2f" % x
+from logwriter import write_night  # noqa: E402
 
 
 def gmt(t):
@@ -31,26 +30,10 @@ def gmt(t):
 
 
 def build_log(results):
-    t_first = results[0].epoch.t
-    t_last = results[-1].epoch.t
-    lines = ["X,%d,night_start," % t_first, "X,%d,battery,90.0" % t_first]
-    for r in results:
-        e = r.epoch
-        fired = r.cue.fire
-        lines.append(",".join([
-            "E", str(e.t), r.sleep.state, str(e.motion),
-            f1(e.hr_mean), f2(e.hr_var), f1(r.rem.hr_base), f2(r.rem.var_base),
-            "1" if r.rem.rem_like else "0", str(r.rem.episode_id),
-            "cue" if fired else "", str(r.cue.level if fired else 0),
-        ]))
-    cues = sum(1 for r in results if r.cue.fire)
-    wakes = sum(1 for r in results if r.cue.event == "wake_after_cue")
-    lines.append("X,%d,battery,84.0" % t_last)
-    # As NightSession.stop() then MorningFlow write them (R15): night_end, then morning.
-    lines.append("X,%d,night_end,cues=%d;wakes=%d" % (t_last, cues, wakes))
-    lines.append("X,%d,morning,dream=0;felt=0;lucid=0" % t_last)
-    lines.append("E,1760028000,ASL")  # truncated final line
-    return "\n".join(lines) + "\n"
+    # Config() is a calibration night, so fires are logged as wouldcue.
+    w = write_night(results, calibration=True)
+    w.lines.append("D,1760028000,H0KUf")  # truncated final line
+    return w.text()
 
 
 def build_sleep(epochs, rem_spans):
