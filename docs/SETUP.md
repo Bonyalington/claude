@@ -179,7 +179,7 @@ every fix you make in "Device findings".
 | A Settings toggle saves the opposite of what it shows | `source/views/MainMenu.mc` (`SettingsMenuDelegate.onSelect`) | `ToggleMenuItem.isEnabled()` returns the old state in `onSelect` on your firmware. Store `!isEnabled()` instead. |
 | Back on a morning question records "No" and moves on | `source/views/MorningFlow.mc` | Expected: Back on a Confirmation means No. If Back instead just closes the question, START re-asks it. Both are fine. |
 | A screen tap on the Night screen shows the status or does anything else | `source/views/NightView.mc` (`NightDelegate.onTap`) | The tap reached a different handler. Record it. START is the only intended control. |
-| `E` lines with motion exactly `500` (the still threshold) in the middle of a night | `source/SensorSampler.mc` (`lcSampledEpoch`) | By design: the accelerometer delivered no samples in that epoch. The epoch then counts as "not still", so it is never REM-like and doesn't count toward sleep onset (a motion of 0 would have looked perfectly still). Note in "Device findings" how often it happens. Long runs mean the accelerometer stops with the display off. |
+| Epochs with motion exactly `500` (the still threshold) in the middle of a night (see them with `tools/calibrate.py --dump`, §8.1) | `source/SensorSampler.mc` (`lcSampledEpoch`) | By design: the accelerometer delivered no samples in that epoch. The epoch then counts as "not still", so it is never REM-like and doesn't count toward sleep onset (a motion of 0 would have looked perfectly still). Note in "Device findings" how often it happens. Long runs mean the accelerometer stops with the display off. |
 
 ## 5. Run the unit tests (in the simulator)
 
@@ -245,7 +245,8 @@ it, a night still runs but logs empty heart rate.
       (off). Toggle one, go back, open Settings again: it kept the new value.
       Set it back.
 - [ ] The simulator's console (or the log) shows the `X,…,night_start,…`,
-      `X,…,caps,hbi=…;acc=…` (after 60 s), `E,…`, `X,…,battery,…`,
+      `X,…,caps,hbi=…;acc=…` (after 60 s), `D,…` (epoch batches: one per
+      10 minutes, plus a short one just before each `X` line), `X,…,battery,…`,
       `X,…,night_end,…` and `X,…,morning,…` lines.
 - [ ] If the night ran over 60 s **without** simulated accelerometer data, the
       caps line says `acc=0` and the status text adds "No motion sensor:
@@ -326,7 +327,8 @@ otherwise B.
 app writes the settings it is actually using into `LUCIDCUE.TXT`, as `k=v`
 pairs on the `night_start` line (e.g. `…,night_start,…hrRise=0.070…`; `hrRise`
 and `varRatio` show 3 decimals, `earliestCueHours` 2). After
-changing a setting, start a short night (or check the next morning's log) and
+changing a setting, start a short night (or check the next morning's log; after
+a full night the `night_start` line is at the top of `LUCIDCUE.BAK`) and
 make sure the line shows your new values. If it shows the old ones, a saved
 `LUCIDCUE.SET` is overriding them (see B).
 
@@ -406,42 +408,56 @@ logs are your personal health data: don't commit them.
    The screen stays black.
 2. In the morning, press START to show the status screen, press START again,
    and confirm **End night**. Answer the three morning questions.
-3. Connect the watch over USB and copy `GARMIN/APPS/LOGS/LUCIDCUE.TXT` to
-   your computer as a dated copy, e.g. `logs/LUCIDCUE_2026-10-10.TXT`.
-4. Replace the watch's `LUCIDCUE.TXT` with a fresh **empty** one (same name,
-   same folder). Each copy then holds exactly one night, and the file never
-   grows too large.
+3. Connect the watch over USB and copy **both**
+   `GARMIN\APPS\LOGS\LUCIDCUE.TXT` and, if it exists,
+   `GARMIN\APPS\LOGS\LUCIDCUE.BAK` into a dated folder on your computer,
+   e.g. `logs/2026-10-10/`. The watch keeps only about 5 KB per file: when
+   `LUCIDCUE.TXT` is full it is renamed `LUCIDCUE.BAK` (replacing any older
+   `.BAK`) and a new `LUCIDCUE.TXT` starts. A night's log is about 0.9 KB per
+   hour, so it is usually split: the `.BAK` holds the start of the night, the
+   `.TXT` the rest. Together they hold a night of up to about 11 hours.
+4. On the watch, replace `LUCIDCUE.TXT` with a fresh **empty** one (same
+   name, same folder), and **delete `LUCIDCUE.BAK`**. The next night then
+   starts at the top of an empty file, and no old `.BAK` can be mixed into
+   it. (Each dated folder then holds exactly one night.)
 5. Fetch that night's sleep stages (§7), e.g. `sleep_2026-10-10.json`. Check
    Garmin Connect still shows sleep stages for the night. If LucidCue running
    all night stopped Garmin's own sleep tracking, note it.
-6. **After night 1 only: check the log survived the whole night.** Open the
-   dated copy in a text editor. The first line should be an
-   `X,…,night_start,…` line, and the last lines should be `X,…,night_end,…`
-   and then `X,…,morning,…`. Then run the calibration script on that night
-   alone:
+6. **Check the log survived the whole night** (always after night 1; it
+   takes a second, so do it every morning). Pass both copied files and the
+   sleep file to the calibration script. Log files can be in any order (the
+   script sorts them by time), a missing `.BAK` is fine, and every file
+   not ending in `.json` counts as a log:
    ```sh
-   .venv/bin/python tools/calibrate.py logs/LUCIDCUE_2026-10-10.TXT sleep_2026-10-10.json --out calib/
+   .venv/bin/python tools/calibrate.py logs/2026-10-10/LUCIDCUE.* sleep_2026-10-10.json --out calib/
    ```
-   Ignore its threshold lines for now (one night is too few). Its `night 1`
-   line reads `N epochs over H h = R per hour (expect about 120), G gap(s)`. Check that N is about 120 × the hours you were in bed, R
-   is close to 120, G is 0, and the next line says `ends with
-   night_end/morning`. If any check fails, the log was cut short or the app
-   was paused during the night. Record it in "Device findings" (§9): the
-   design's fallback (spec §2) is to keep the log in `Application.Storage`
-   and show it on the Summary screen, which needs a code change.
+   Windows (Command Prompt; the script expands the `*` itself):
+   `.venv\Scripts\python tools\calibrate.py logs\2026-10-10\LUCIDCUE.* sleep_2026-10-10.json --out calib\`
+   Ignore its threshold lines for now (one night is too few). Its first line
+   should read `2 log file(s), 1 night(s) in log, …` (`1 log file(s)` if
+   there was no `.BAK`), with no `warning: the log does not start with a
+   night_start line`. Its `night 1` line reads `N epochs over H h = R per
+   hour (expect about 120), G gap(s)`. Check that N is about 120 × the
+   hours you were in bed, R is close to 120, G is 0, and the next line says
+   `ends with night_end/morning`. If the start is missing, the `.BAK` was
+   not copied, or the night outgrew the two files (the `.TXT` was not
+   emptied, or the night was longer than about 11 hours). If another check
+   fails, the log was cut short or the app was paused during the night.
+   Record it in "Device findings" (§9).
 
-**After night 3**, join the three logs into one file and run the calibration
-script:
+**After night 3**, run the calibration script on all three nights at once:
+every dated folder's files plus the three sleep files. No joining is needed:
+the script sorts the log files by time and splits them into nights at each
+`night_start`. Keep only the calibration nights' folders in `logs/` (move
+older ones elsewhere), or list the folders one by one.
 
 ```sh
-cat logs/LUCIDCUE_2026-10-10.TXT logs/LUCIDCUE_2026-10-11.TXT logs/LUCIDCUE_2026-10-12.TXT > LUCIDCUE.TXT
-.venv/bin/python tools/calibrate.py LUCIDCUE.TXT sleep_2026-10-10.json sleep_2026-10-11.json sleep_2026-10-12.json --out calib/
+.venv/bin/python tools/calibrate.py logs/*/LUCIDCUE.* sleep_2026-10-10.json sleep_2026-10-11.json sleep_2026-10-12.json --out calib/
 ```
 
 Windows (Command Prompt):
-`copy /b logs\LUCIDCUE_2026-10-10.TXT+logs\LUCIDCUE_2026-10-11.TXT+logs\LUCIDCUE_2026-10-12.TXT LUCIDCUE.TXT`,
-then `.venv\Scripts\python tools\calibrate.py LUCIDCUE.TXT sleep_2026-10-10.json sleep_2026-10-11.json sleep_2026-10-12.json --out calib\`.
-(macOS / Linux can also write `sleep_*.json`.)
+`.venv\Scripts\python tools\calibrate.py logs\*\LUCIDCUE.* sleep_2026-10-10.json sleep_2026-10-11.json sleep_2026-10-12.json --out calib\`.
+(`sleep_*.json` works too, on both.)
 
 The script prints, for each night, the epoch count, the battery drop and the
 path of a plot in `calib/`. It then prints a `default hrRise=0.05
@@ -456,8 +472,8 @@ Last come the motion percentiles while asleep. Then:
 1. **Set the thresholds:** only set them if precision ≥ 0.60 and the tool
    printed a recommendation (a `best hrRise=… varRatio=…` line). Then set
    `hrRise` and `varRatio` to the reported values (§6, "Changing settings"),
-   and confirm that the next `night_start` line in `LUCIDCUE.TXT` shows the
-   new values. After `NO RECOMMENDATION`, keep the current values, and check
+   and confirm that the next `night_start` line (top of `LUCIDCUE.BAK` after
+   a full night, else `LUCIDCUE.TXT`) shows the new values. After `NO RECOMMENDATION`, keep the current values, and check
    that each `sleep_*.json` has sleep stages for the right night.
 2. **Check stillness:** if the ASLEEP motion p90 is near or above 500, the
    `stillThreshold` (fixed at 500 in the app) is too low for you. Note the
@@ -472,6 +488,35 @@ Last come the motion percentiles while asleep. Then:
    during detected REM, no earlier than `earliestCueHours` after you fall
    asleep. Keep training every bedtime, and review your morning answers
    weekly.
+
+### 8.1 Reading the log
+
+The watch log is compact so that a whole night fits in the watch's two small
+files (spec §4.7). Times are Unix seconds (UTC).
+
+- `X,<t>,<name>,<detail>` lines are readable events: `night_start` (with the
+  settings in use), `caps`, `onset`, `cue` / `wouldcue` (`level=<n>`),
+  `wake_after_cue`, `absorbed`, `battery`, `night_end` and `morning`.
+- `D,<t0>,<payload>` lines are batches of epochs, about 6 per hour: 20
+  epochs (10 minutes) per line, or fewer just before an `X` line, at the end
+  of the night, or after a pause. The payload is encoded, 6 characters per
+  epoch, so it can't be read by eye.
+
+To read the epochs, let the script decode them:
+
+```sh
+.venv/bin/python tools/calibrate.py logs/2026-10-10/LUCIDCUE.* --dump
+```
+
+This prints the log in file order with each `D` line expanded into one
+`E,<t>,<motion>,<hrMean>,<hrVar>` line per 30 s epoch (an empty field means no
+valid heart-rate data), between the `X` lines. Redirect it to a file
+(`> night.csv`) to open it in a spreadsheet. The values are rounded as stored:
+motion down to a multiple of 4, heart rate to 0.1, variability to 0.01. Sleep
+state, baselines and REM flags are no longer logged. The script recomputes
+them from these epochs with the same model as the watch (default settings),
+and they are in its plots. Older logs with one `E,…` line per epoch (12
+fields) are still read.
 
 ---
 
@@ -498,13 +543,18 @@ at the end of this file.
     Record it and stop here.
 - [ ] **2-minute Night run:** choose **Start Night**, wait at least 2 minutes,
       then press START, START again and confirm **End night**. Answer the
-      morning questions. Copy `LUCIDCUE.TXT` to the computer and open it in
-      a text editor. It should contain:
+      morning questions. Copy `LUCIDCUE.TXT` (and `LUCIDCUE.BAK`, if there
+      is one) to the computer and open it in a text editor. It should
+      contain:
   - [ ] an `X,…,night_start,…` line
   - [ ] an `X,…,caps,hbi=…;acc=…` line
-  - [ ] at least 3 `E,…` lines (one every 30 seconds)
-  - [ ] an `X,…,morning,…` line
+  - [ ] at least 1 `D,…` line (epochs are written in 10-minute batches, and
+        the pending ones just before each `X` line, so a 2-minute run has
+        one or two short ones)
   - [ ] an `X,…,night_end,…` line
+  - [ ] an `X,…,morning,…` line
+  - [ ] `.venv/bin/python tools/calibrate.py LUCIDCUE.TXT --dump` lists at
+        least 3 `E,…` lines (one every 30 seconds, §8.1)
 - [ ] **Beat-to-beat data:** in the `caps` line, is it `hbi=1` or `hbi=0`?
   - `hbi=1`: beat-to-beat intervals are available. Variability uses RMSSD.
   - `hbi=0`: not available on your watch or firmware. The app automatically
@@ -518,16 +568,19 @@ at the end of this file.
 - [ ] If `LUCIDCUE.TXT` stayed empty: check the file is exactly
       `GARMIN/APPS/LOGS/LUCIDCUE.TXT`, and that the app file is exactly
       `LucidCue.prg`. Record it if it still doesn't work.
-- [ ] **Log survival probe (30–60 min):** empty `LUCIDCUE.TXT` (or note
-      where the new night starts), choose **Start Night**, and leave the
+- [ ] **Log survival probe (30–60 min):** empty `LUCIDCUE.TXT` and delete
+      `LUCIDCUE.BAK` if there is one, choose **Start Night**, and leave the
       watch untouched with the display off for 30–60 minutes. If Sleep Mode
       is scheduled for the evening, let the run go through its start time,
       or turn Sleep Mode on by hand during the run. Then end the night as
-      above and copy `LUCIDCUE.TXT` to the computer. Check it with the
-      calibration script (no sleep file needed):
+      above and copy `LUCIDCUE.TXT` (and `LUCIDCUE.BAK`, if there is one)
+      to e.g. `logs/probe/`. Check it with the calibration script (no sleep
+      file needed):
       ```sh
-      .venv/bin/python tools/calibrate.py LUCIDCUE.TXT --out calib/
+      .venv/bin/python tools/calibrate.py logs/probe/LUCIDCUE.* --out calib/
       ```
+  - [ ] the log has about 6 `D,…` lines per hour (a few more around `X`
+        lines)
   - [ ] the `night 1` line shows about 120 epochs per hour (60 for a
         30-minute run, 120 for an hour) and `0 gap(s)`
   - [ ] the next line says `ends with night_end/morning`
@@ -557,6 +610,13 @@ _Fill in after the checklist above: watch size and device id, firmware
 version, Buzz test result, Sleep Mode result, `hbi` and `acc` values, log
 survival (probe run and night 1: epochs per hour, gaps, does the log end with
 `night_end`/`morning`; if not, note the spec §2 `Application.Storage`
-fallback is needed), how often mid-night `E` lines show motion `500`
-(accelerometer dropouts, §4.1), battery drop per night, calibrated `hrRise` /
-`varRatio`, and any build or test fixes from §4.1._
+fallback is needed), how often mid-night epochs show motion `500`
+(accelerometer dropouts, §4.1; see `--dump`, §8.1), battery drop per night,
+calibrated `hrRise` / `varRatio`, and any build or test fixes from §4.1._
+
+- **Log file cap (first real night):** the watch keeps `LUCIDCUE.TXT` to
+  about 5 KB. When it is full it is renamed `LUCIDCUE.BAK` (one kept; 5,137
+  bytes seen) and a new `.TXT` starts. With the first log format (one line
+  per epoch) only the last ~66 minutes of the night survived. The compact
+  format (spec §4.7) fits a 10-hour night in about 9 KB, across `.BAK` +
+  `.TXT`.

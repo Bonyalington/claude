@@ -48,7 +48,7 @@ the authoring environment:
 | `heartBeatIntervals` (beat-to-beat) via sensor data listener on Epix Pro | Use RMSSD for variability | Use within-epoch HR standard deviation; condition 2b can be disabled |
 | `Attention.VibeProfile` duty cycle (intensity) honoured | Ramp intensity | Ramp by pulse count / pulse length instead |
 | Vibration from a background service | Daytime reality-check prompts on watch | Daytime prompts via phone reminders; cue learned via bedtime training only |
-| `System.println` → `GARMIN/APPS/LOGS/<APP>.TXT` on sideloaded app | Primary log export | Fall back to `Application.Storage` and dump on Summary screen |
+| `System.println` → `GARMIN/APPS/LOGS/<APP>.TXT` on sideloaded app (found: ~5 KB cap plus one `.BAK`, §4.7) | Primary log export | Fall back to `Application.Storage` and dump on Summary screen |
 
 ## 3. User flow
 
@@ -164,16 +164,49 @@ cycle is not honoured on device, levels map to longer pulses instead
 
 ### 4.7 Logging — `NightLog`
 
-One CSV line per epoch:
-`t,state,motion,hrMean,hrVar,hrBase,varBase,remLike,episode,cueEvent,level`
-(`hrMean` and `hrBase` at 1 decimal, `hrVar` and `varBase` at 2 decimals.)
+**Device finding (first real night):** the watch caps the sideload log at
+about 5 KB. When `LUCIDCUE.TXT` is full it is renamed `LUCIDCUE.BAK`
+(replacing the previous `.BAK`) and a new `.TXT` starts, so only those two
+files survive. The first format, one ~50-byte CSV line per epoch (~50 KB a
+night), kept only the last ~66 minutes (the `.BAK` was 5,137 bytes). A whole
+night of up to 10–11 h, events included, must therefore fit in about 9 KB.
 
-Event lines: night start/end, sleep onset, cue / would-cue, wake-after-cue,
-morning answers, battery % at start and end.
+**Epoch batches:** `D,<t0>,<payload>`, one line per 20 epochs (10 min).
+- `t0` is the Unix time of the batch's first epoch; epoch `i` is at
+  `t0 + 30*i`.
+- The payload has 6 characters per epoch: three 12-bit values, each as 2
+  characters of the base64url alphabet
+  `A–Z a–z 0–9 - _` (no commas), high 6 bits first:
+  - motion: `q = min(4094, motion / 4)`, decoded `q*4`;
+  - hrMean: `round(hr*10)` (half up), capped at 4094, 4095 = null, decoded
+    `q/10`;
+  - hrVar: `round(var*100)` (half up), capped at 4094, 4095 = null, decoded
+    `q/100`.
+
+  So motion is stored 0–3 mg low (the 500 and 5000 thresholds keep their side),
+  HR to ±0.05 and variability to ±0.005, the same precision as the old 1- and
+  2-decimal fields.
+- The pending batch is written early (a partial line) before every `X` line,
+  at the end of the night, and when an epoch is more than 10 s off the
+  batch's 30 s grid (a Timer stall), so `t0 + 30*i` holds and line times
+  never go backwards in the file.
+- Sleep state, baselines, REM flag and episode are no longer logged. The
+  calibration script recomputes them from the epochs with the Python model.
+
+**Event lines:** `X,<t>,<name>,<detail>` (no commas in the detail; `;`-separated
+`k=v`): `night_start` (all settings), `caps`, `onset`, `cue` / `wouldcue`
+(`level=<n>`), `wake_after_cue`, `absorbed`, `battery` (start and end),
+`night_end`, `morning`.
+
+**Size:** about 0.9 KB per hour. A 10-hour night is about 9.0 KB (1,200
+epochs plus ~0.8 KB of events; `model/tests/test_logformat.py` checks ≤ 9,500
+bytes).
 
 Primary export: `System.println` to the sideload log file
-(`GARMIN/APPS/LOGS/LUCIDCUE.TXT`, which the user creates once). The user
-copies it off over USB.
+(`GARMIN/APPS/LOGS/LUCIDCUE.TXT`, which the user creates once). Each morning
+the user copies `LUCIDCUE.TXT` and `LUCIDCUE.BAK` off over USB, then empties
+the `.TXT` and deletes the `.BAK`. `tools/calibrate.py` takes both files (in
+any order) and still reads the old one-`E`-line-per-epoch format.
 
 ## 5. Settings (Connect IQ phone app)
 
@@ -193,8 +226,8 @@ copies it off over USB.
 ## 6. Calibration script (desktop, Python)
 
 `tools/calibrate.py`:
-- Reads `LUCIDCUE.TXT` and a Garmin Connect sleep-stage export for the same
-  night.
+- Reads `LUCIDCUE.TXT` + `LUCIDCUE.BAK` (§4.7) and a Garmin Connect
+  sleep-stage export for the same night.
 - Plots motion, HR, variability, REM-like flags and Garmin stages on one
   timeline.
 - Grid-searches `hrRise` and `varRatio` to maximise agreement with Garmin
