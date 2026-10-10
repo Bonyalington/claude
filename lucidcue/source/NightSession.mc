@@ -24,9 +24,20 @@ class NightSummary {
 // buzzes (live mode) or only logs "wouldcue" (calibration mode, or after suppressCues()),
 // and writes the log.
 //
+// Log (spec §4.7): epochs are buffered and written as one D line per BATCH_EPOCHS epochs
+// (10 min). Fires become X,<t>,cue,level=<n> or X,<t>,wouldcue,level=<n>. The pending
+// batch is flushed before every X line (so line times never go backwards) and by stop().
+// An epoch more than BATCH_SLACK_SEC off the batch's 30 s grid (a Timer stall) also
+// flushes first, so epoch i of a D line stays at t0 + 30*i (to within the slack; 1-2 s
+// Timer jitter must not split batches, or the night would outgrow the ~9 KB log).
+// Up to BATCH_EPOCHS - 1 epochs are lost if the app dies without stop().
+//
 // log and vibe are duck-typed so tests can pass fakes: log needs write(line as String),
 // vibe needs play(level as Number). The real caller passes a NightLog and a Vibe.
 class NightSession {
+    const BATCH_EPOCHS = 20;               // epochs per D line (10 min)
+    const BATCH_SLACK_SEC = 10;            // off-grid tolerance before a batch is split
+
     var mCfg as LcConfig;
     var mLog;                              // duck-typed: write(line as String) as Void
     var mVibe;                             // duck-typed: play(level as Number) as Void
@@ -40,6 +51,9 @@ class NightSession {
     var mStopped as Boolean = false;
     var mSuppressed as Boolean = false;           // suppressCues(): fires log "wouldcue" only
     var mSummary as NightSummary or Null = null;  // cached by the first stop()
+    var mBatch as String = "";                    // encoded epochs not yet written
+    var mBatchT0 as Number = 0;                   // t of the batch's first epoch
+    var mBatchN as Number = 0;                    // epochs in mBatch
 
     function initialize(cfg as LcConfig, log, vibe, startT as Number, battery as Float) {
         mCfg = cfg;
@@ -66,18 +80,20 @@ class NightSession {
         mRem.step(e, state);
         mCue.step(e, state, onset, mRem);
 
-        var cueEvent = "";
+        var fired = mCue.fire();
+        var cueEvent = "wouldcue";
         var level = 0;
-        if (mCue.fire()) {
+        if (fired) {
             level = mCue.level();
-            if (mCfg.calibrationMode || mSuppressed) {
-                cueEvent = "wouldcue";
-            } else {
+            if (!(mCfg.calibrationMode || mSuppressed)) {
                 mVibe.play(level);
                 cueEvent = "cue";
             }
         }
-        mLog.write(mFmt.epochLine(e, state, mRem, cueEvent, level));
+        addEpoch(e);
+        if (fired) {
+            logEvent(e.t, cueEvent, "level=" + level);
+        }
 
         // Reaction to the previous epoch's cue: "wake_after_cue" or "absorbed".
         var reaction = mCue.event();
@@ -126,14 +142,15 @@ class NightSession {
         logEvent(t, "caps", "hbi=" + $.lcBit(hbi) + ";acc=" + $.lcBit(acc));
     }
 
-    // Ends the night: logs the end battery and night_end, and returns the summary.
-    // Idempotent: a second call returns the first call's summary and writes nothing.
+    // Ends the night: writes the pending epochs, logs the end battery and night_end, and
+    // returns the summary. Idempotent: a second call returns the first call's summary and writes nothing.
     function stop(endT as Number, battery as Float) as NightSummary {
         var done = mSummary;
         if (done != null) {
             return done;
         }
         mStopped = true;
+        flushBatch();
         logEvent(endT, "battery", battery.format("%.1f"));
         logEvent(endT, "night_end", "cues=" + mCue.cuesTonight() + ";wakes=" + mCue.wakesAfterCue());
         var s = new NightSummary();
@@ -155,8 +172,39 @@ class NightSession {
             + ";lucid=" + $.lcBit(lucid));
     }
 
+    // Writes an X line, after the pending batch (its epochs are not later than t).
     function logEvent(t as Number, name as String, detail as String) as Void {
+        flushBatch();
         mLog.write(mFmt.eventLine(t, name, detail));
+    }
+
+    // Appends e to the pending batch and writes the batch once it is full. An epoch off
+    // the batch's 30 s grid by more than BATCH_SLACK_SEC first flushes the batch.
+    function addEpoch(e as Epoch) as Void {
+        if (mBatchN > 0) {
+            var off = e.t - (mBatchT0 + LcConst.EPOCH_SEC * mBatchN);
+            if (off > BATCH_SLACK_SEC || off < -BATCH_SLACK_SEC) {
+                flushBatch();
+            }
+        }
+        if (mBatchN == 0) {
+            mBatchT0 = e.t;
+        }
+        mBatch = mBatch + $.lcEncodeEpoch(e);
+        mBatchN += 1;
+        if (mBatchN >= BATCH_EPOCHS) {
+            flushBatch();
+        }
+    }
+
+    // Writes the pending batch as a D line (nothing when it is empty).
+    function flushBatch() as Void {
+        if (mBatchN == 0) {
+            return;
+        }
+        mLog.write(mFmt.batchLine(mBatchT0, mBatch));
+        mBatch = "";
+        mBatchN = 0;
     }
 }
 

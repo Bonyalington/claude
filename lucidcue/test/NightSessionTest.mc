@@ -10,11 +10,18 @@ import Toybox.Test;
 // Config(earliest_cue_hours=0.0)): ASLEEP at epoch 49 with onset_t = T0 + 600 (epoch 20),
 // REM-like epochs 110..129, episode 1 active from epoch 115; fires at epochs 115, 119, 123
 // with levels 30, 45, 60; "absorbed" reactions at epochs 116, 120, 124.
+//
+// Log lines of that night (Python mirror, model/tests/logwriter.py): night_start, battery,
+// then D lines flushed when full and before every X line: epochs 0-19, 20-39, 40-49,
+// X onset, 50-69, 70-89, 90-109, 110-115, X cue, 116, X absorbed, 117-119, X cue, 120,
+// X absorbed, 121-123, X cue, 124, X absorbed (NsFix.LINES = 21 lines: 12 D lines with
+// 125 epochs); epochs 125-129 wait in the batch until stop().
 
 (:test)
 module NsFix {
     const T0 = 1760000000;
     const EPOCHS = 130;   // epochs fed by runNight
+    const LINES = 21;     // lines written by the constructor + runNight (see the header)
 
     // Collects the lines NightSession writes (duck-typed stand-in for NightLog's sink).
     class FakeLog {
@@ -115,14 +122,62 @@ module NsFix {
         return n;
     }
 
-    // The first line starting with prefix, or "" if there is none.
-    function lineWithPrefix(lines as Array<String>, prefix as String) as String {
+    // Index of the first line equal to line, or -1.
+    function indexOf(lines as Array<String>, line as String) as Number {
         for (var k = 0; k < lines.size(); k++) {
-            if (startsWith(lines[k], prefix)) {
-                return lines[k];
+            if (lines[k].equals(line)) {
+                return k;
             }
         }
-        return "";
+        return -1;
+    }
+
+    // s repeated n times.
+    function repeat(s as String, n as Number) as String {
+        var out = "";
+        for (var k = 0; k < n; k++) {
+            out = out + s;
+        }
+        return out;
+    }
+
+    // The time field of a D or X line (digits after the first comma).
+    function lineT(line as String) as Number {
+        var chars = line.toCharArray();
+        var t = 0;
+        for (var k = 2; k < chars.size(); k++) {
+            if (chars[k] == ',') {
+                break;
+            }
+            t = t * 10 + (chars[k].toNumber() - 48);
+        }
+        return t;
+    }
+
+    // Length of a D line's payload (everything after the second comma).
+    function payloadLen(line as String) as Number {
+        var chars = line.toCharArray();
+        var commas = 0;
+        for (var k = 0; k < chars.size(); k++) {
+            if (chars[k] == ',') {
+                commas += 1;
+                if (commas == 2) {
+                    return chars.size() - k - 1;
+                }
+            }
+        }
+        return 0;
+    }
+
+    // Number of epochs in all D lines (6 payload characters each).
+    function dEpochs(lines as Array<String>) as Number {
+        var n = 0;
+        for (var k = 0; k < lines.size(); k++) {
+            if (startsWith(lines[k], "D,")) {
+                n += payloadLen(lines[k]) / 6;
+            }
+        }
+        return n;
     }
 }
 
@@ -137,9 +192,14 @@ function testCalibrationModeNeverVibrates(logger as Test.Logger) as Boolean {
     Test.assertEqual(NsFix.countSub(log.lines, ",cue,"), 0);
     // The controller still decided 3 cues (it never reads calibrationMode).
     Test.assertEqual(s.mCue.cuesTonight(), 3);
-    // night_start + battery + one E line per epoch + onset + 3 reactions.
-    Test.assertEqual(NsFix.countPrefix(log.lines, "E,"), NsFix.EPOCHS);
-    Test.assertEqual(log.lines.size(), 2 + NsFix.EPOCHS + 1 + 3);
+    Test.assert(NsFix.hasLine(log.lines, "X,1760003450,wouldcue,level=30"));
+    Test.assert(NsFix.hasLine(log.lines, "X,1760003570,wouldcue,level=45"));
+    Test.assert(NsFix.hasLine(log.lines, "X,1760003690,wouldcue,level=60"));
+    // 12 D lines with 125 epochs; the last 5 epochs wait for stop() (see the header).
+    Test.assertEqual(NsFix.countPrefix(log.lines, "D,"), 12);
+    Test.assertEqual(NsFix.dEpochs(log.lines), 125);
+    Test.assertEqual(NsFix.countPrefix(log.lines, "E,"), 0);
+    Test.assertEqual(log.lines.size(), NsFix.LINES);
     return true;
 }
 
@@ -162,13 +222,14 @@ function testLiveModeVibratesAtCueLevels(logger as Test.Logger) as Boolean {
     Test.assertEqual(vibe.levels[2], 60);
     Test.assertEqual(NsFix.countSub(log.lines, ",cue,"), 3);
     Test.assertEqual(NsFix.countSub(log.lines, ",wouldcue,"), 0);
-    // The E line of the first cue (epoch 115) carries the event and the level.
-    var line = NsFix.lineWithPrefix(log.lines, "E,1760003450,");
-    logger.debug(line);
-    Test.assert(NsFix.startsWith(line, "E,1760003450,ASLEEP,"));
-    Test.assert(NsFix.hasSub(line, ",1,1,cue,30"));   // remLike 1, episode 1
-    // Whole line (Python trace): hrVar / varBase at 2 decimals; hrBase 55.30303... at 1.
-    LcTestUtil.assertStr(line, "E,1760003450,ASLEEP,100,59.0,20.00,55.3,20.00,1,1,cue,30");
+    // The first cue (epoch 115) is an X line right after the D line that holds epochs
+    // 110..115 (REM-like: 100 / 59.0 / 20.0 -> "AZJOfQ").
+    var at = NsFix.indexOf(log.lines, "X,1760003450,cue,level=30");
+    Test.assert(at > 0);
+    logger.debug(log.lines[at - 1]);
+    LcTestUtil.assertStr(log.lines[at - 1], "D,1760003300," + NsFix.repeat("AZJOfQ", 6));
+    Test.assert(NsFix.hasLine(log.lines, "X,1760003570,cue,level=45"));
+    Test.assert(NsFix.hasLine(log.lines, "X,1760003690,cue,level=60"));
     return true;
 }
 
@@ -222,8 +283,11 @@ function testStopWithoutSleep(logger as Test.Logger) as Boolean {
     Test.assert(NsFix.hasLine(lines, "No sleep detected"));
     Test.assert(NsFix.hasLine(lines, "No cues"));
     LcTestUtil.assertStr(lines[2], "Battery -0.5%");
-    // stop() logs the end battery, then night_end.
+    // stop() writes the pending 10 epochs (awake: 2000 / 66.0 / 20.0 -> "H0KUfQ"), then
+    // the end battery, then night_end.
     var n = log.lines.size();
+    Test.assertEqual(n, 5);
+    LcTestUtil.assertStr(log.lines[n - 3], "D,1760000000," + NsFix.repeat("H0KUfQ", 10));
     LcTestUtil.assertStr(log.lines[n - 2], "X,1760000300,battery,89.5");
     Test.assert(NsFix.startsWith(log.lines[n - 1], "X,1760000300,night_end,"));
     Test.assertEqual(NightLogFix.fieldCount(log.lines[n - 1]), 4);
@@ -328,7 +392,7 @@ function testSuppressCuesNeverVibrates(logger as Test.Logger) as Boolean {
     Test.assertEqual(NsFix.countSub(log.lines, ",wouldcue,"), 3);
     Test.assertEqual(NsFix.countSub(log.lines, ",cue,"), 0);
     // Same lines as a calibration night: suppression adds no log lines of its own.
-    Test.assertEqual(log.lines.size(), 2 + NsFix.EPOCHS + 1 + 3);
+    Test.assertEqual(log.lines.size(), NsFix.LINES);
     var summary = s.stop(NsFix.T0 + 30 * NsFix.EPOCHS, 88.0);
     Test.assertEqual(summary.calibration, true);
     return true;
@@ -355,8 +419,9 @@ function testSuppressCuesMidNight(logger as Test.Logger) as Boolean {
     Test.assertEqual(NsFix.countSub(log.lines, ",cue,"), 1);
     Test.assertEqual(NsFix.countSub(log.lines, ",wouldcue,"), 2);
     // The controller still ramps: the would-cues carry levels 45 and 60.
-    Test.assert(NsFix.hasSub(NsFix.lineWithPrefix(log.lines, "E,1760003570,"), ",wouldcue,45"));
-    Test.assert(NsFix.hasSub(NsFix.lineWithPrefix(log.lines, "E,1760003690,"), ",wouldcue,60"));
+    Test.assert(NsFix.hasLine(log.lines, "X,1760003450,cue,level=30"));
+    Test.assert(NsFix.hasLine(log.lines, "X,1760003570,wouldcue,level=45"));
+    Test.assert(NsFix.hasLine(log.lines, "X,1760003690,wouldcue,level=60"));
     return true;
 }
 
@@ -415,5 +480,91 @@ function testSummaryLinesCalibration(logger as Test.Logger) as Boolean {
     Test.assert(NsFix.hasSub(lines[2], " L30"));
     Test.assert(NsFix.hasSub(lines[4], " L60"));
     LcTestUtil.assertStr(lines[5], "Battery -2.0%");
+    return true;
+}
+
+// The whole synthetic night's D lines (t0 and epoch count per line, from the Python
+// trace in the header), then stop() and the morning answers. Line times never go
+// backwards in file order.
+(:test)
+function testNightBatchLines(logger as Test.Logger) as Boolean {
+    var log = new NsFix.FakeLog();
+    var s = new NightSession(NsFix.cfg(true), log, new NsFix.FakeVibe(), NsFix.T0, 90.0);
+    NsFix.runNight(s);
+    s.stop(NsFix.T0 + 30 * NsFix.EPOCHS, 88.0);
+    s.logMorning(NsFix.T0 + 30 * NsFix.EPOCHS + 60, false, false, false);
+    var t0s = [0, 20, 40, 50, 70, 90, 110, 116, 117, 120, 121, 124, 125] as Array<Number>;
+    var ns = [20, 20, 10, 20, 20, 20, 6, 1, 3, 1, 3, 1, 5] as Array<Number>;
+    var d = 0;
+    for (var i = 0; i < log.lines.size(); i++) {
+        var line = log.lines[i];
+        if (NsFix.startsWith(line, "D,")) {
+            Test.assertEqual(NsFix.lineT(line), NsFix.T0 + 30 * t0s[d]);
+            Test.assertEqual(NsFix.payloadLen(line), 6 * ns[d]);
+            Test.assertEqual(NightLogFix.fieldCount(line), 3);
+            d += 1;
+        }
+        if (i > 0) {
+            Test.assert(NsFix.lineT(line) >= NsFix.lineT(log.lines[i - 1]));
+        }
+    }
+    Test.assertEqual(d, 13);
+    Test.assertEqual(NsFix.dEpochs(log.lines), NsFix.EPOCHS);
+    // First batch: 20 awake epochs (2000 / 66.0 / 20.0 -> "H0KUfQ").
+    LcTestUtil.assertStr(log.lines[2], "D,1760000000," + NsFix.repeat("H0KUfQ", 20));
+    // stop(): the last 5 epochs, then battery and night_end; then morning.
+    var n = log.lines.size();
+    Test.assertEqual(n, NsFix.LINES + 4);
+    LcTestUtil.assertStr(log.lines[n - 4], "D,1760003750," + NsFix.repeat("AZJOfQ", 5));
+    LcTestUtil.assertStr(log.lines[n - 3], "X,1760003900,battery,88.0");
+    Test.assert(NsFix.startsWith(log.lines[n - 2], "X,1760003900,night_end,"));
+    Test.assert(NsFix.startsWith(log.lines[n - 1], "X,1760003960,morning,"));
+    return true;
+}
+
+// A batch is written as soon as it holds 20 epochs (10 min), not at the next one.
+(:test)
+function testFullBatchWrittenAtOnce(logger as Test.Logger) as Boolean {
+    var log = new NsFix.FakeLog();
+    var s = new NightSession(NsFix.cfg(false), log, new NsFix.FakeVibe(), NsFix.T0, 90.0);
+    NsFix.feed(s, 0, 19, 2000, 66.0d, 20.0d);
+    Test.assertEqual(log.lines.size(), 2);
+    NsFix.feed(s, 19, 1, 2000, 66.0d, 20.0d);
+    Test.assertEqual(log.lines.size(), 3);
+    LcTestUtil.assertStr(log.lines[2], "D,1760000000," + NsFix.repeat("H0KUfQ", 20));
+    NsFix.feed(s, 20, 1, 2000, 66.0d, 20.0d);
+    Test.assertEqual(log.lines.size(), 3);
+    return true;
+}
+
+// A Timer stall: an epoch off the 30 s grid by more than 10 s starts a new batch, so
+// epoch i of a D line stays at t0 + 30*i. A 1 s jitter stays in the batch.
+(:test)
+function testBatchSplitsOnTimeGap(logger as Test.Logger) as Boolean {
+    var log = new NsFix.FakeLog();
+    var s = new NightSession(NsFix.cfg(false), log, new NsFix.FakeVibe(), NsFix.T0, 90.0);
+    s.onEpoch(new Epoch(NsFix.T0, 100, 59.0d, 20.0d));
+    s.onEpoch(new Epoch(NsFix.T0 + 30, 100, 59.0d, 20.0d));
+    s.onEpoch(new Epoch(NsFix.T0 + 120, 100, 59.0d, 20.0d));   // 2 epochs missing
+    Test.assertEqual(log.lines.size(), 3);
+    LcTestUtil.assertStr(log.lines[2], "D,1760000000,AZJOfQAZJOfQ");
+    s.onEpoch(new Epoch(NsFix.T0 + 151, 100, 59.0d, 20.0d));   // 1 s late: same batch
+    s.stop(NsFix.T0 + 200, 89.0);
+    LcTestUtil.assertStr(log.lines[3], "D,1760000120,AZJOfQAZJOfQ");
+    Test.assertEqual(NsFix.countPrefix(log.lines, "D,"), 2);
+    return true;
+}
+
+// Any X line (here caps, 60 s in) first writes the pending epochs, so line times stay
+// in order.
+(:test)
+function testEventFlushesBatch(logger as Test.Logger) as Boolean {
+    var log = new NsFix.FakeLog();
+    var s = new NightSession(NsFix.cfg(false), log, new NsFix.FakeVibe(), NsFix.T0, 90.0);
+    NsFix.feed(s, 0, 3, 2000, 66.0d, 20.0d);
+    s.logCaps(NsFix.T0 + 61, false, true);
+    Test.assertEqual(log.lines.size(), 4);
+    LcTestUtil.assertStr(log.lines[2], "D,1760000000," + NsFix.repeat("H0KUfQ", 3));
+    LcTestUtil.assertStr(log.lines[3], "X,1760000061,caps,hbi=0;acc=1");
     return true;
 }
