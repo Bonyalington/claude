@@ -315,3 +315,18 @@ def test_dump_prints_readable_epochs_and_events(tmp_path, capsys):
         "X,1760000090,night_end,cues=1;wakes=0",
     ]
     assert not (tmp_path / "calib").exists()
+
+
+def test_main_expands_wildcards_itself(tmp_path, capsys, monkeypatch):
+    # Windows Command Prompt passes logs\*\LUCIDCUE.* through unexpanded.
+    import calibrate
+    for day in ("2026-10-10", "2026-10-11"):
+        (tmp_path / "logs" / day).mkdir(parents=True)
+        _write_short_log(tmp_path / "logs" / day / "LUCIDCUE.TXT", 40)
+    monkeypatch.chdir(tmp_path)
+    rc = calibrate.main([os.path.join("logs", "*", "LUCIDCUE.*"), "--out", "c"])
+    out = capsys.readouterr().out
+    assert rc == 0 and "2 log file(s), 2 night(s) in log" in out
+    import pytest
+    with pytest.raises(SystemExit):
+        calibrate.main([os.path.join("nothing", "*.TXT")])

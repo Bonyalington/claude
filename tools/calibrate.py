@@ -7,11 +7,13 @@ Usage:
 
 Files ending in .json (any case) are Garmin sleep files; every other file is a watch log
 (LUCIDCUE.TXT, LUCIDCUE.BAK, dated copies). Log files may come in any order and from
-several mornings: they are joined in the time order of their first line.
+several mornings: they are joined in the time order of their first line. Wildcards
+(logs/*/LUCIDCUE.*, sleep_*.json) are expanded here too, for Windows Command Prompt.
 
 Exit status 2 means no thresholds are recommended (see NO_RECOMMENDATION).
 """
 import argparse
+import glob
 import json
 import os
 import sys
@@ -264,8 +266,17 @@ def main(argv=None):
                     help="print the decoded log (E,<t>,<motion>,<hrMean>,<hrVar> and X lines) "
                          "and exit")
     args = ap.parse_args(argv)
-    logs = [p for p in args.files if not p.lower().endswith(".json")]
-    sleep_json = [p for p in args.files if p.lower().endswith(".json")]
+    files = []
+    for p in args.files:
+        if any(c in p for c in "*?[") and not os.path.exists(p):
+            matches = sorted(glob.glob(p))
+            if not matches:
+                ap.error("no file matches %s" % p)
+            files.extend(matches)
+        else:
+            files.append(p)
+    logs = [p for p in files if not p.lower().endswith(".json")]
+    sleep_json = [p for p in files if p.lower().endswith(".json")]
     if not logs:
         ap.error("no log file given (LUCIDCUE.TXT / LUCIDCUE.BAK)")
 
