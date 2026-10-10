@@ -4,8 +4,8 @@ import Toybox.Time;
 import Toybox.Timer;
 
 // Collects raw sensor data and turns it into one Epoch every 30 s.
-//   - Accelerometer x/y/z (mg) at 10 Hz and beat-to-beat intervals (ms), delivered once
-//     a second by the sensor data listener (:period => 1).
+//   - Accelerometer x/y/z (mg) at 10 Hz, delivered once a second by the sensor data
+//     listener (:period => 1). Beat-to-beat intervals are not requested (see start()).
 //   - Heart rate (bpm) at 1 Hz from Sensor.enableSensorEvents (info.heartRate, may be null).
 //   - A 30 000 ms repeating timer builds the epoch with EpochFeatures.build, clears the
 //     buffers and calls onEpoch.
@@ -53,14 +53,15 @@ class SensorSampler {
         clearBuffers();
         if (Sensor has :registerSensorDataListener) {
             try {
+                // Beat-to-beat intervals are deliberately NOT requested. On the
+                // Epix Pro, streaming them to the app coincided with Garmin's own
+                // sleep staging recording zero REM for the night (device finding,
+                // 2026-10-10). Variability falls back to the within-epoch HR std.
                 Sensor.registerSensorDataListener(method(:onSensorData), {
                     :period => 1,
                     :accelerometer => {
                         :enabled => true,
                         :sampleRate => 10
-                    },
-                    :heartBeatIntervals => {
-                        :enabled => true
                     }
                 });
                 mListening = true;
