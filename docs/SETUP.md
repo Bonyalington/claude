@@ -235,9 +235,11 @@ it, a night still runs but logs empty heart rate.
       nothing.
 - [ ] On the Night screen, START shows dim grey status text (elapsed time,
       state, cues) that disappears after about 5 s.
-- [ ] START while the status text is up asks **End night?**. *No* returns to
-      the black screen. *Yes* asks "Remember a dream?", "Felt the cue in a
-      dream?" and "Became lucid?" in turn, then shows the summary.
+- [ ] START while the status text is up opens the **End night?** menu with
+      **Keep sleeping** pre-selected. START (or Back) there returns to the black
+      screen, so accidental presses never end the night. DOWN to **End night**,
+      then START, asks "Remember a dream?", "Felt the cue in a dream?" and
+      "Became lucid?" in turn, then shows the summary.
 - [ ] Back on the summary returns to the menu.
 - [ ] **Buzz test** shows "Level 10", "Level 30", "Level 50", "Level 80",
       about 3 s apart, then "Buzz test done".
@@ -407,7 +409,7 @@ logs are your personal health data: don't commit them.
    cue. Then choose **Start Night** and go to sleep wearing the watch snugly.
    The screen stays black.
 2. In the morning, press START to show the status screen, press START again,
-   and confirm **End night**. Answer the three morning questions.
+   then DOWN to **End night** and START. Answer the three morning questions.
 3. Connect the watch over USB and copy **both**
    `GARMIN\APPS\LOGS\LUCIDCUE.TXT` and, if it exists,
    `GARMIN\APPS\LOGS\LUCIDCUE.BAK` into a dated folder on your computer,
@@ -542,7 +544,7 @@ at the end of this file.
   - No (silent): this is a **blocker**. The app cannot cue you during sleep.
     Record it and stop here.
 - [ ] **2-minute Night run:** choose **Start Night**, wait at least 2 minutes,
-      then press START, START again and confirm **End night**. Answer the
+      then press START, START again, DOWN to **End night** and START. Answer the
       morning questions. Copy `LUCIDCUE.TXT` (and `LUCIDCUE.BAK`, if there
       is one) to the computer and open it in a text editor. It should
       contain:

@@ -68,7 +68,9 @@ Main menu: **Train**, **Start Night**, **Buzz test**, **Settings**. Buzz test pl
 Runs sensing → sleep state → REM detection → cue control → logging
 (Section 4). Pressing a button shows a dim status screen: elapsed time,
 state, cues fired. Back is ignored in Night mode. Pressing START again while the
-status screen is up asks "End night?", and Yes opens Morning.
+status screen is up opens an "End night?" menu whose pre-selected item is
+"Keep sleeping" (device finding: three accidental START presses ended a night);
+DOWN to "End night" then START opens Morning.
 
 ### 3.3 Morning check-in (~20 s)
 

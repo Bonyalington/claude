@@ -4,7 +4,8 @@ import Toybox.Timer;
 import Toybox.WatchUi;
 
 // Night screen: black on every update. START shows a dim (dark grey) status overlay
-// for 5 s; START while it is up asks "End night?". Back and screen taps are consumed.
+// for 5 s; START while it is up opens the "End night?" menu (default "Keep sleeping").
+// Back and screen taps are consumed.
 class NightView extends WatchUi.View {
     const OVERLAY_MS = 5000;
 
@@ -107,16 +108,21 @@ class NightDelegate extends WatchUi.BehaviorDelegate {
             view.showOverlay();
         } else {
             view.hideOverlay();
-            WatchUi.pushView(new WatchUi.Confirmation("End night?"), new EndNightDelegate(self),
-                WatchUi.SLIDE_IMMEDIATE);
+            // A menu, not a Yes/No Confirmation: its first (pre-selected) item is
+            // "Keep sleeping", so repeated accidental START presses (pillow, half asleep)
+            // never end the night. Ending needs DOWN to "End night", then START.
+            var menu = new WatchUi.Menu2({ :title => "End night?" });
+            menu.addItem(new WatchUi.MenuItem("Keep sleeping", null, :keep, null));
+            menu.addItem(new WatchUi.MenuItem("End night", null, :end, null));
+            WatchUi.pushView(menu, new EndNightMenuDelegate(self), WatchUi.SLIDE_IMMEDIATE);
         }
         return true;
     }
 
-    // Yes on "End night?": stop the sampler and session now (the log is complete even if
-    // the app is closed), then go to Morning. The switch is deferred by a short timer so
-    // the Confirmation has been dismissed first, whatever order the firmware pops it in;
-    // MorningFlow.begin() then replaces this Night view, so no stale Night view remains.
+    // "End night" chosen in the menu: stop the sampler and session now (the log is
+    // complete even if the app is closed), then go to Morning. The switch is deferred by a
+    // short timer so the menu has been popped first; MorningFlow.begin() then replaces
+    // this Night view, so no stale Night view remains.
     function endNight() as Void {
         if (mFlow != null) {
             return;
@@ -141,18 +147,23 @@ class NightDelegate extends WatchUi.BehaviorDelegate {
     }
 }
 
-class EndNightDelegate extends WatchUi.ConfirmationDelegate {
+// "End night?" menu: "Keep sleeping" (default) or "End night". Back keeps sleeping.
+class EndNightMenuDelegate extends WatchUi.Menu2InputDelegate {
     var mNight as NightDelegate;
 
     function initialize(night as NightDelegate) {
-        ConfirmationDelegate.initialize();
+        Menu2InputDelegate.initialize();
         mNight = night;
     }
 
-    function onResponse(response as WatchUi.Confirm) as Boolean {
-        if (response == WatchUi.CONFIRM_YES) {
+    function onSelect(item as WatchUi.MenuItem) as Void {
+        WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+        if (item.getId() == :end) {
             mNight.endNight();
         }
-        return true;
+    }
+
+    function onBack() as Void {
+        WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
     }
 }
